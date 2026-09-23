@@ -78,9 +78,10 @@ for limitations and what to include in a bug report.
 
 Created by **Destroyjevski**.
 
-Thanks to **Crementif and the BetterVR contributors** for the Cemu VR research
-and implementation that informed this project. See [CREDITS.md](CREDITS.md)
-for acknowledgements and implementation background.
+Huge thanks to **Crementif and the BetterVR contributors** for their excellent
+work on Cemu VR. Their research and implementation provided an important
+technical foundation for this project. See [CREDITS.md](CREDITS.md) for
+acknowledgements and implementation background.
 
 Original project code is licensed under [MIT](LICENSE). Third-party licenses
 are included in [licenses/](licenses/); see [THIRD-PARTY.txt](THIRD-PARTY.txt)
