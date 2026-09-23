@@ -40,11 +40,6 @@ The available presets are 60, 90, 120 and 144 FPS. Start with 60 if 120 is unsta
 Close Cemu, then use the other launcher. The launcher selects one VR mode
 at a time. Do not enable both VR packs manually.
 
-Diorama defaults to **2× world scale**; first person defaults to **20×**.
-You can edit `CEMUVR_MARIO_WORLD_SIZE` in the corresponding `.cmd` file.
-The supported setting range is 0.25–30. These values change perceived scale;
-they are not calibrated measurements of character size.
-
 ## What the launcher changes
 
 For the session, it copies the included graphic packs into Cemu's data folder,

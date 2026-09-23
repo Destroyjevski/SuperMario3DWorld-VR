@@ -5,8 +5,8 @@ Initial alpha release of Super Mario 3D World VR for Cemu.
 ## Included
 
 - Stereoscopic rendering and 6DOF head tracking through OpenXR.
-- Diorama mode at 2× world scale.
-- Experimental first-person mode at 20× world scale, with free stick turning
+- Diorama mode.
+- Experimental first-person mode, with free stick turning
   and movement relative to the stick-turned view.
 - VR camera framing for the opening cinematic in both modes.
 - Room-anchored HUD and menus.

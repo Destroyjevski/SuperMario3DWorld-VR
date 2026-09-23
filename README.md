@@ -13,8 +13,8 @@ or first-person mode.
 
 | Mode | Launcher | View |
 | --- | --- | --- |
-| **Diorama** | `Start-VR.cmd` | View the level at **2× world scale**. |
-| **First person** | `Start-VR-FirstPerson.cmd` | View from the character at **20× world scale**, with free stick turning. |
+| **Diorama** | `Start-VR.cmd` | View the level as a diorama. |
+| **First person** | `Start-VR-FirstPerson.cmd` | View from the character, with free stick turning. |
 
 Both modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
