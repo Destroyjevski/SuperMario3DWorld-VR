@@ -10,7 +10,8 @@ Special thanks to **Crementif and the contributors to
 [BetterVR / BotW-BetterVR](https://github.com/Crementif/BotW-BetterVR)**.
 Their implementation and research were an essential foundation for this port.
 
-Work adapted or used as concrete implementation references includes:
+BetterVR provided implementation references and, where applicable,
+MIT-licensed groundwork for areas including:
 
 - Rendering two eye views from one simulation state.
 - GPU clear-color markers for eye identification and buffer-slot signaling.
@@ -26,7 +27,8 @@ through the Captain Toad VR port. BetterVR's BotW-specific gameplay, weapon
 and motion-control systems are not used.
 
 BetterVR is MIT licensed: **Copyright (c) 2021 Crementif**.
-The unchanged license is included in [licenses/BetterVR-MIT.txt](licenses/BetterVR-MIT.txt).
+The unchanged license is included in [licenses/BetterVR-MIT.txt](licenses/BetterVR-MIT.txt)
+and is retained in the distributed release archives.
 This project is independent; no endorsement by Crementif or BetterVR is claimed.
 
 ## Other components
