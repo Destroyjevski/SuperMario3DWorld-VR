@@ -1,0 +1,28 @@
+[Definition]
+titleIds = 0005000010145D00
+name = FPS Unlock - 60 Hz gameplay (EU v0 only)
+path = "Super Mario 3D World/Mods/FPS Unlock"
+description = Experimental: higher render rate, native 60 Hz simulation. EU v0 D2308838 only. No motion interpolation. See release notes.
+version = 7
+
+[Default]
+$fps = 120
+
+[Preset]
+name = 120 FPS (60 Hz gameplay)
+$fps = 120
+
+[Preset]
+name = 90 FPS (60 Hz gameplay)
+$fps = 90
+
+[Preset]
+name = 144 FPS (60 Hz gameplay)
+$fps = 144
+
+[Preset]
+name = 60 FPS reference
+$fps = 60
+
+[Control]
+vsyncFrequency = $fps

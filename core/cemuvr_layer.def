@@ -1,0 +1,5 @@
+LIBRARY cemuvr_layer
+EXPORTS
+    vkNegotiateLoaderLayerInterfaceVersion
+    cemuvr_GetInstanceProcAddr
+    cemuvr_GetDeviceProcAddr

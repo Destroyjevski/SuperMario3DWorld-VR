@@ -1,0 +1,24 @@
+/build*/
+/dist/
+/.vs/
+__pycache__/
+*.pyc
+*.obj
+*.pdb
+*.dll
+*.exe
+*.lib
+*.exp
+*.zip
+*.log
+config.json
+settings.xml
+mlc01/
+shaderCache/
+
+# Local session data and release artifacts
+cemu-path.txt
+fps-preset.txt
+settings*.xml
+*.bak
+/Releases/

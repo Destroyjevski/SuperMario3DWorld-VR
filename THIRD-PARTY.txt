@@ -1,0 +1,15 @@
+BetterVR by Crementif and contributors: MIT license and copyright notice in
+licenses/BetterVR-MIT.txt. BetterVR was an important technical reference for
+the stereo render flow, GPU marker protocol, shadow reuse, camera/projection
+research and HUD separation. See CREDITS.md.
+
+Khronos OpenXR loader: Apache 2.0 license text in
+licenses/OpenXR-Apache-2.0.txt. The loader is linked into the VR layer.
+
+JsonCpp: MIT license and copyright notice in licenses/JsonCpp-MIT.txt. JsonCpp
+source may be incorporated into the statically linked OpenXR loader depending
+on how that loader was built.
+
+Vulkan headers and Windows SDK/D3D11 system libraries are build dependencies.
+The community Super Mario 3D World resolution graphic pack by Crementif and
+getdls is used in the documented setup but is not redistributed here.

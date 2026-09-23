@@ -1,0 +1,6 @@
+[Definition]
+titleIds = 0005000010145D00
+name = Super Mario 3D World VR - First Person (experimental)
+path = "Super Mario 3D World/VR First Person"
+description = Alpha 1.0: First-person stereo VR with head tracking and free stick turning.
+version = 7
