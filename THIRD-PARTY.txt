@@ -1,3 +1,6 @@
+This file summarizes third-party dependencies and notices. Full license texts
+are stored in licenses/ and are included in the distributed release archives.
+
 BetterVR by Crementif and contributors: MIT license and copyright notice in
 licenses/BetterVR-MIT.txt. BetterVR was an important technical reference for
 the stereo render flow, GPU marker protocol, shadow reuse, camera/projection
