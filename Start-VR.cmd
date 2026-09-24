@@ -1,8 +1,7 @@
 @echo off
-rem Super Mario 3D World VR - Alpha 1.0 - diorama
+rem Super Mario 3D World VR - Alpha 1.1 - diorama
 rem Close Cemu before starting. See INSTALL.md for setup and KNOWN-ISSUES.md for limits.
 rem Set the active OpenXR headset to 120 Hz for the default FPS preset.
-set "VR_MODE=diorama"
 set "CEMUVR_MARIO_WORLD_SIZE=2"
 rem Keep the packs enabled after quitting (0 = disable them).
 set "VR_KEEP_PACKS=0"

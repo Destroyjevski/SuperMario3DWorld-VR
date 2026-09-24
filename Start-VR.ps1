@@ -15,10 +15,8 @@
       * after you quit Cemu switches those packs off again (unless you asked
         otherwise) and restores the graphics API.
 
-    Two modes, one script. Start-VR.cmd plays the diorama; the experimental
-    Start-VR-FirstPerson.cmd sets VR_MODE=firstperson and puts the eye into
-    Mario instead. Exactly one of the two stereo packs is ever enabled,
-    because both patch the same addresses.
+    Start-VR.cmd starts in Diorama. R3 switches camera mode in gameplay.
+    Only the combined stereo pack is enabled; legacy separate packs are disabled.
 
     Cemu settings and packs are stored in its data folder; launcher preferences
     are stored beside this script. No system-wide layer is installed.
@@ -26,11 +24,11 @@
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$packs = @('Mario3DWorld_VR', 'Mario3DWorld_VR_FirstPerson', 'Mario3DWorld_FPS')
+$packs = @('Mario3DWorld_VR', 'Mario3DWorld_FPS')
+$legacyPacks = @('Mario3DWorld_VR_FirstPerson')
 $defaultPreset = '120 FPS (60 Hz gameplay)'
-$firstPerson = ($env:VR_MODE -eq 'firstperson')
-if ($firstPerson) { $stereoPack = 'Mario3DWorld_VR_FirstPerson' } else { $stereoPack = 'Mario3DWorld_VR' }
-if ($firstPerson) { $modeName = 'First Person (experimental)' } else { $modeName = 'Diorama' }
+$stereoPack = 'Mario3DWorld_VR'
+$modeName = 'Diorama / First Person (R3)'
 
 function Say([string] $text) { Write-Host $text }
 
@@ -49,14 +47,14 @@ function EnsureNode($parent, [string] $name, $document) {
 
 function IsOurEntry($entry) {
     $file = $entry.GetAttribute('filename')
-    foreach ($pack in $packs) {
+    foreach ($pack in ($packs + $legacyPacks)) {
         if ($file -match ([regex]::Escape($pack) + '[\\/]rules\.txt$')) { return $true }
     }
     return $false
 }
 
 Say ''
-Say ('Super Mario 3D World VR - Alpha 1.0 - ' + $modeName)
+Say ('Super Mario 3D World VR - Alpha 1.1 - ' + $modeName)
 Say '-------------------------------------'
 
 # --- the package itself -----------------------------------------------------
@@ -124,7 +122,9 @@ foreach ($pack in $packs) {
     $source = Join-Path $root (Join-Path 'graphicPacks' $pack)
     if (-not (Test-Path $source)) { Fail ('The package is incomplete, missing: ' + $source) }
     $target = Join-Path $packRoot $pack
-    if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+    $parentPath = [IO.Path]::GetFullPath((Split-Path -Parent $target)).TrimEnd('\')
+    if ($parentPath -ne [IO.Path]::GetFullPath($packRoot).TrimEnd('\')) { Fail 'Invalid pack destination.' }
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
     Copy-Item $source $target -Recurse -Force
 }
 Say ('Packs:    copied into ' + $packRoot)
@@ -148,6 +148,14 @@ $xml = New-Object System.Xml.XmlDocument
 $xml.PreserveWhitespace = $true
 $xml.Load($settingsFile)
 $content = $xml.DocumentElement
+
+$previousLogging = @{}
+foreach ($name in @('logflag', 'advanced_ppc_logging')) {
+    $node = $content.SelectSingleNode($name)
+    $previousLogging[$name] = if ($node) { $node.InnerText } else { $null }
+    $node = EnsureNode $content $name $xml
+    $node.InnerText = if ($name -eq 'logflag') { '0' } else { 'false' }
+}
 
 $graphic = EnsureNode $content 'Graphic' $xml
 $api = EnsureNode $graphic 'api' $xml
@@ -181,6 +189,8 @@ $env:VK_LAYER_PATH = $layer
 $env:VK_INSTANCE_LAYERS = 'VK_LAYER_CEMUVR_core'
 $env:VK_LOADER_LAYERS_ENABLE = 'VK_LAYER_CEMUVR_core'
 $env:CEMUVR_ENABLE = '1'
+# Both camera modes derive their eye translations from the same pose mailbox.
+$env:CEMUVR_MARIO_WORLD_SIZE = '2'
 # Other implicit Vulkan layers - another Cemu VR layer such as BetterVR, or a
 # screen overlay - would fight over the same frames. They are switched off for
 # this one process only; that is the tested configuration.
@@ -188,6 +198,7 @@ if ($env:VR_KEEP_OTHER_LAYERS -ne '1') { $env:VK_LOADER_LAYERS_DISABLE = '~impli
 
 Say ''
 Say 'Starting Cemu with the VR layer. Put the headset on.'
+Say 'Starts in Diorama. Click R3 in a level to switch to First Person and back.'
 Say 'This window stays open until you quit Cemu, then it tidies up.'
 Say ''
 $cemu = Start-Process -FilePath $cemuExe -WorkingDirectory $cemuDir -PassThru
@@ -222,6 +233,16 @@ try {
         if ($graphic) {
             $api = $graphic.SelectSingleNode('api')
             if ($api) { $api.InnerText = $previousApi; $changed = $true }
+        }
+    }
+    foreach ($name in @('logflag', 'advanced_ppc_logging')) {
+        $node = $content.SelectSingleNode($name)
+        if ($null -eq $previousLogging[$name]) {
+            if ($node) { [void] $content.RemoveChild($node); $changed = $true }
+        } else {
+            $node = EnsureNode $content $name $xml
+            $node.InnerText = $previousLogging[$name]
+            $changed = $true
         }
     }
     if ($changed) { $xml.Save($settingsFile) }

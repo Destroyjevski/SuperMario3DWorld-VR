@@ -9,12 +9,11 @@
 - For the default 120 FPS preset, use a 120 Hz headset refresh rate.
 - Close Cemu before starting a VR session.
 
-## Install Alpha 1.0
+## Install Alpha 1.1
 
-1. Extract `SuperMario3DWorld-VR-Alpha-1.0-install.zip`.
+1. Extract `SuperMario3DWorld-VR-Alpha-1.1-install.zip`.
 2. Copy its **`Mario3DWorld-VR`** folder into your Cemu folder, beside `Cemu.exe`.
-3. Open that folder and run **`Start-VR.cmd`** for diorama mode, or
-   **`Start-VR-FirstPerson.cmd`** for first person.
+3. Open that folder and run **`Start-VR.cmd`**. The game starts in diorama mode.
 4. Launch the game from Cemu's game list.
 5. Keep the launcher window open. Quit Cemu normally to end the session.
 
@@ -37,18 +36,25 @@ The available presets are 60, 90, 120 and 144 FPS. Start with 60 if 120 is unsta
 
 ## Switching modes
 
-Close Cemu, then use the other launcher. The launcher selects one VR mode
-at a time. Do not enable both VR packs manually.
+Click **R3** (the right stick) in a level to switch between diorama and
+first person without restarting Cemu. The same click resets camera turning
+and recentres head position. First person supports continuous 360-degree
+turning with the right stick. Intro and world map use diorama view.
+
+Map the right-stick click in Cemu's gamepad settings if it is not assigned.
+`Start-VR.cmd` is the only launcher. It disables the old separate
+first-person pack when upgrading from Alpha 1.0.
 
 ## What the launcher changes
 
 For the session, it copies the included graphic packs into Cemu's data folder,
 enables the selected packs, switches to Vulkan and loads the VR layer for the
-Cemu process. Existing unrelated graphic packs remain enabled.
+Cemu process. Verbose Cemu debug logging is disabled for the session.
+Existing unrelated graphic packs remain enabled.
 
 Settings backups are kept in `Mario3DWorld-VR-backups` inside Cemu's data folder.
 After a normal exit, the launcher disables its packs and restores the previous
-graphics API. The copied pack files remain installed.
+graphics API and debug-logging settings. The copied pack files remain installed.
 
 If Cemu or the launcher is forcibly closed, check the enabled graphic packs
 before returning to ordinary 2D play. No system-wide Vulkan layer is installed.

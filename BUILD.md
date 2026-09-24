@@ -26,7 +26,7 @@ Redistributable may be needed on the machine running the mod.
 The files under `graphicPacks/` are assembled by Cemu when it starts the game.
 No game executable is required to compile the C++ layer.
 
-## Package Alpha 1.0
+## Package Alpha 1.1
 
 ```powershell
 python tools/package.py --dll build/Release/cemuvr_layer.dll

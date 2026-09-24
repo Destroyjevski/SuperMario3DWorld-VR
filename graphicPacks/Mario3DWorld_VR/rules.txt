@@ -2,5 +2,5 @@
 titleIds = 0005000010145D00
 name = Super Mario 3D World VR
 path = "Super Mario 3D World/VR"
-description = Alpha 1.0: Diorama stereo VR with head tracking and room-anchored HUD.
+description = Alpha 1.1: Stereo VR with head tracking, room-anchored HUD and R3 switching between diorama and first person.
 version = 7

@@ -14,7 +14,7 @@ TEXT_ROOT = [
     "README.md", "INSTALL.md", "KNOWN-ISSUES.md", "RELEASE_NOTES.md",
     "BUILD.md", "CREDITS.md", "THIRD-PARTY.txt", "LICENSE", "VERSION",
 ]
-START_FILES = ["Start-VR.cmd", "Start-VR-FirstPerson.cmd", "Start-VR.ps1"]
+START_FILES = ["Start-VR.cmd", "Start-VR.ps1"]
 # The installation ZIP holds exactly one folder with this name. Copy it into
 # your Cemu folder, open it, double-click Start-VR.cmd - that is the install.
 INSTALL_FOLDER = "Mario3DWorld-VR"

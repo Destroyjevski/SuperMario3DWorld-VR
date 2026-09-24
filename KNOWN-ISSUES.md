@@ -1,6 +1,6 @@
 # Known issues
 
-**Alpha 1.0** is intended for early testing. A full playthrough has not been
+**Alpha 1.1** is intended for early testing. A full playthrough has not been
 validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 
 ## Rendering and performance
@@ -20,8 +20,8 @@ validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 - The character's model remains visible around the viewpoint. Nearby geometry
   can clip against the game's near plane.
 - HUD elements stay anchored in the room and can move out of view as you turn.
-- Stick turning also affects movement on the world map. Pull the right stick
-  straight down to restore the game's camera direction.
+- Intro and world map use diorama view. A selected first-person mode resumes
+  in supported gameplay scenes. R3 switches modes and resets camera turning.
 - Fixed cameras and cinematics may produce awkward framing.
 
 ## Compatibility

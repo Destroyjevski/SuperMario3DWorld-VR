@@ -1,7 +1,7 @@
-[Mario3DWorld_VR_EU_v0]
+[Mario3DWorld_VR_R3_EU_v0]
 moduleMatches = 0xD2308838
 .origin = codecave
-; Stereo rendering: two eye drawings from one simulation state.
+; Stereo render flow: two drawings from one calculated simulation state.
 rrFlowHeader:
 .int 0x4354464C
 .int 1
@@ -68,7 +68,7 @@ bl import.gx2.GX2DrawDone
 ; Draw the just-prepared list; procDraw flips the list-buffer index itself.
 mr r3, r29
 bl rrDraw
-; Complete GPU work before rendering the next eye.
+; Conservative GPU barrier between eye renders.
 bl import.gx2.GX2DrawDone
 ; Prepare the other list from the same calculated state, without another calc.
 lis r12, rrEye@ha
@@ -107,19 +107,6 @@ b rrAfterSecondDraw
 
 0x024DB304 = rrAfterBeforeCalc:
 rrBeforeCalc:
-; DIORAMA_INTRO_RESET_BEGIN
-lis r11, rrDioramaDistance@ha
-lis r0, 0x3F26
-ori r0, r0, 0x6666
-stw r0, rrDioramaDistance@l(r11)
-lis r11, rrDioramaAdvance@ha
-lis r0, 0x3EB3
-ori r0, r0, 0x3333
-stw r0, rrDioramaAdvance@l(r11)
-lis r12, mrSceneClass@ha
-li r11, 0
-stw r11, mrSceneClass@l(r12)
-; DIORAMA_INTRO_RESET_END
 lis r12, mrCullCount@ha
 li r11, 0
 stw r11, mrCullCount@l(r12)
@@ -268,6 +255,27 @@ cmpw r7, r11
 bne rrPoseLatchDone
 stw r7, 0(r12)
 rrPoseLatchDone:
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lis r11, rrSlot@ha
+lwz r11, rrSlot@l(r11)
+mulli r11, r11, 8
+add r11, r11, r8
+lwz r7, 0(r8)
+stw r7, 32(r11)
+lwz r7, 8(r8)
+stw r7, 36(r11)
+lis r11, rrDioramaDistance@ha
+lis r7, 0x3F26
+ori r7, r7, 0x6666
+stw r7, rrDioramaDistance@l(r11)
+lis r11, rrDioramaAdvance@ha
+lis r7, 0x3EB3
+ori r7, r7, 0x3333
+stw r7, rrDioramaAdvance@l(r11)
+lis r12, mrSceneClass@ha
+li r11, 0
+stw r11, mrSceneClass@l(r12)
 lis r9, rrSlot@ha
 addi r9, r9, rrSlot@l
 lwz r10, 0(r9)
@@ -712,9 +720,604 @@ lfs f3, 0(r8)
 ; Same diagnostic eye numbering: eye0 uses physical right, eye1 left.
 addi r12, r12, 4
 cmpwi r10, 1
-beq rrPoseEyeReady
+beq mtEyeSelected
 addi r12, r12, 48
+mtEyeSelected:
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lis r11, rrSlot@ha
+lwz r11, rrSlot@l(r11)
+mulli r11, r11, 8
+add r11, r11, r8
+lwz r7, 32(r11)
+stw r7, 28(r8)
+lwz r7, 36(r11)
+lwz r0, 12(r8)
+cmpw r7, r0
+beq mtAnchorReady
+stw r7, 12(r8)
+addi r11, r12, 48
+cmpwi r10, 1
+beq mtOtherEyeReady
+addi r11, r12, -48
+mtOtherEyeReady:
+lfs f1, 12(r12)
+lfs f2, 12(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 0(r12)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 28(r12)
+lfs f2, 28(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 16(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 44(r12)
+lfs f2, 44(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 32(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 16(r8)
+lfs f1, 12(r12)
+lfs f2, 12(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 4(r12)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 28(r12)
+lfs f2, 28(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 20(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 44(r12)
+lfs f2, 44(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 36(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 20(r8)
+lfs f1, 12(r12)
+lfs f2, 12(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 8(r12)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 28(r12)
+lfs f2, 28(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 24(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 44(r12)
+lfs f2, 44(r11)
+fadds f1, f1, f2
+lfs f2, 48(r8)
+fmuls f1, f1, f2
+lfs f2, 40(r12)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 24(r8)
+mtAnchorReady:
+lwz r0, 28(r8)
+cmpwi r0, 1
+bne mtUseDiorama
+lis r11, mrSceneClass@ha
+lwz r11, mrSceneClass@l(r11)
+lis r7, 0x1032
+ori r7, r7, 0x86DC
+cmpw r11, r7
+bne mtUseDiorama
+lwz r11, 580(r3)
+lis r7, 0x1000
+cmplw r11, r7
+blt mtUseDiorama
+lis r7, 0x5000
+cmplw r11, r7
+bge mtUseDiorama
+andi. r0, r11, 3
+bne mtUseDiorama
+lwz r0, 0(r11)
+lis r7, 0x1031
+ori r7, r7, 0x9EF4
+cmpw r0, r7
+bne mtUseDiorama
+lis r7, mrEyeTarget@ha
+addi r7, r7, mrEyeTarget@l
+lfs f0, 1976(r11)
+stfs f0, 0(r7)
+lfs f0, 1980(r11)
+lfs f1, 12(r7)
+fadds f0, f0, f1
+stfs f0, 4(r7)
+lfs f0, 1984(r11)
+stfs f0, 8(r7)
+b mtPreparePose
+mtUseDiorama:
+li r0, 0
+stw r0, 28(r8)
+mtPreparePose:
+; Private per-call pose. Never change the shared pose mailbox or its stamp.
+lis r11, mtPoseScratch@ha
+addi r11, r11, mtPoseScratch@l
+lwz r7, 0(r12)
+stw r7, 0(r11)
+lwz r7, 4(r12)
+stw r7, 4(r11)
+lwz r7, 8(r12)
+stw r7, 8(r11)
+lwz r7, 12(r12)
+stw r7, 12(r11)
+lwz r7, 16(r12)
+stw r7, 16(r11)
+lwz r7, 20(r12)
+stw r7, 20(r11)
+lwz r7, 24(r12)
+stw r7, 24(r11)
+lwz r7, 28(r12)
+stw r7, 28(r11)
+lwz r7, 32(r12)
+stw r7, 32(r11)
+lwz r7, 36(r12)
+stw r7, 36(r11)
+lwz r7, 40(r12)
+stw r7, 40(r11)
+lwz r7, 44(r12)
+stw r7, 44(r11)
+lfs f4, 56(r8)
+lwz r0, 28(r8)
+cmpwi r0, 1
+bne mtScaleReady
+lfs f4, 52(r8)
+mtScaleReady:
+lfs f0, 12(r12)
+lfs f1, 0(r12)
+lfs f2, 16(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 4(r12)
+lfs f2, 20(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 12(r11)
+lfs f0, 28(r12)
+lfs f1, 16(r12)
+lfs f2, 16(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 20(r12)
+lfs f2, 20(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 28(r11)
+lfs f0, 44(r12)
+lfs f1, 32(r12)
+lfs f2, 16(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r12)
+lfs f2, 20(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 44(r11)
+mr r12, r11
+lwz r0, 28(r8)
+cmpwi r0, 1
+bne mtDioramaMath
+mrEyeKeep:
+lfs f4, 20(r3)
+lfs f5, 40(r3)
+fmuls f4, f4, f5
+lfs f5, 24(r3)
+lfs f6, 36(r3)
+fmuls f5, f5, f6
+fsubs f4, f4, f5
+lfs f5, 0(r3)
+fmuls f7, f4, f5
+lfs f4, 16(r3)
+lfs f5, 40(r3)
+fmuls f4, f4, f5
+lfs f5, 24(r3)
+lfs f6, 32(r3)
+fmuls f5, f5, f6
+fsubs f4, f4, f5
+lfs f5, 4(r3)
+fmuls f4, f4, f5
+fsubs f7, f7, f4
+lfs f4, 16(r3)
+lfs f5, 36(r3)
+fmuls f4, f4, f5
+lfs f5, 20(r3)
+lfs f6, 32(r3)
+fmuls f5, f5, f6
+fsubs f4, f4, f5
+lfs f5, 8(r3)
+fmuls f4, f4, f5
+fadds f7, f7, f4
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f5, 4(r8)
+lfs f6, 28(r8)
+.int 0xFC073000 ; fcmpu cr0, f7, f6
+bge mrLookHandKeep
+fneg f5, f5
+mrLookHandKeep:
+stfs f5, 8(r8)
 rrPoseEyeReady:
+lfs f1, 0(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 0(r9)
+lfs f1, 0(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 4(r9)
+lfs f1, 0(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 8(r9)
+lfs f1, 0(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 0(r9)
+lfs f2, 8(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 0(r9)
+stfs f7, 8(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 0(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+lfs f1, 12(r12)
+fadds f0, f0, f1
+stfs f0, 12(r9)
+lfs f1, 16(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 16(r9)
+lfs f1, 16(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 20(r9)
+lfs f1, 16(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 24(r9)
+lfs f1, 16(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 16(r9)
+lfs f2, 24(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 16(r9)
+stfs f7, 24(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 16(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+lfs f1, 28(r12)
+fadds f0, f0, f1
+stfs f0, 28(r9)
+lfs f1, 32(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 32(r9)
+lfs f1, 32(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 36(r9)
+lfs f1, 32(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 40(r9)
+lfs f1, 32(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 32(r9)
+lfs f2, 40(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 32(r9)
+stfs f7, 40(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 32(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+lfs f1, 44(r12)
+fadds f0, f0, f1
+stfs f0, 44(r9)
+lis r8, rrCameraMinusOne@ha
+addi r8, r8, rrCameraMinusOne@l
+lfs f4, 0(r8)
+lfs f1, 52(r3)
+lfs f2, 64(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fmuls f5, f1, f3
+lfs f1, 56(r3)
+lfs f2, 68(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f5, f5, f1
+lfs f1, 60(r3)
+lfs f2, 72(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f5, f5, f1
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f5, 16(r8)
+lfs f1, 0(r9)
+lfs f2, 12(r9)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 16(r9)
+lfs f2, 28(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 32(r9)
+lfs f2, 44(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 52(r9)
+lfs f1, 32(r9)
+fmuls f1, f1, f5
+fmuls f1, f1, f4
+fadds f1, f0, f1
+stfs f1, 64(r9)
+lfs f1, 16(r9)
+stfs f1, 76(r9)
+lfs f1, 4(r9)
+lfs f2, 12(r9)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r9)
+lfs f2, 28(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 44(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 56(r9)
+lfs f1, 36(r9)
+fmuls f1, f1, f5
+fmuls f1, f1, f4
+fadds f1, f0, f1
+stfs f1, 68(r9)
+lfs f1, 20(r9)
+stfs f1, 80(r9)
+lfs f1, 8(r9)
+lfs f2, 12(r9)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 24(r9)
+lfs f2, 28(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 44(r9)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fmuls f0, f0, f4
+stfs f0, 60(r9)
+lfs f1, 40(r9)
+fmuls f1, f1, f5
+fmuls f1, f1, f4
+fadds f1, f0, f1
+stfs f1, 72(r9)
+lfs f1, 24(r9)
+stfs f1, 84(r9)
+b mtCameraStamp
+mtDioramaMath:
 lis r8, rrCameraMinusOne@ha
 addi r8, r8, rrCameraMinusOne@l
 lfs f4, 0(r8)
@@ -1005,6 +1608,7 @@ fadds f1, f0, f1
 stfs f1, 72(r9)
 lfs f1, 24(r9)
 stfs f1, 84(r9)
+mtCameraStamp:
 lis r12, rrSlot@ha
 addi r12, r12, rrSlot@l
 lwz r11, 0(r12)
@@ -1069,6 +1673,75 @@ addi r11, r11, 1
 stw r11, 4(r12)
 blr
 0x02450A98 = bla rrShadowDraw
+
+; Root Calc receives its scene-owner object in r31 at 022F37F0.
+; Preserve scratch registers and CR across the displaced mr r3,r31.
+mrSceneProbe:
+stwu r1, -0x20(r1)
+stw r0, 8(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 12(r1)
+stw r11, 16(r1)
+stw r12, 20(r1)
+mr r3, r31
+lis r12, mrSceneClass@ha
+addi r12, r12, mrSceneClass@l
+li r11, 0
+stw r11, 0(r12)
+cmpwi r3, 0
+beq mrSceneDone
+lwz r11, 8(r3)
+cmpwi r11, 0
+beq mrSceneDone
+lis r0, 0x1000
+cmplw r11, r0
+blt mrSceneDone
+lis r0, 0x5000
+cmplw r11, r0
+bge mrSceneDone
+lwz r11, 0x5C(r11)
+cmpwi r11, 0
+beq mrSceneDone
+lis r0, 0x1000
+cmplw r11, r0
+blt mrSceneDone
+lis r0, 0x5000
+cmplw r11, r0
+bge mrSceneDone
+lwz r11, 0(r11)
+stw r11, 0(r12)
+mrSceneDone:
+lis r11, rrDioramaDistance@ha
+lis r0, 0x3F26
+ori r0, r0, 0x6666
+stw r0, rrDioramaDistance@l(r11)
+lis r11, rrDioramaAdvance@ha
+lis r0, 0x3EB3
+ori r0, r0, 0x3333
+stw r0, rrDioramaAdvance@l(r11)
+lwz r11, 0(r12)
+lis r0, 0x1027
+ori r0, r0, 0xF388
+cmpw r11, r0
+bne mrIntroFactorsDone
+lis r11, rrDioramaDistance@ha
+lis r0, 0x3EBD
+ori r0, r0, 0x70A4
+stw r0, rrDioramaDistance@l(r11)
+lis r11, rrDioramaAdvance@ha
+lis r0, 0x3F21
+ori r0, r0, 0x47AE
+stw r0, rrDioramaAdvance@l(r11)
+mrIntroFactorsDone:
+lwz r12, 20(r1)
+lwz r11, 16(r1)
+lwz r0, 12(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 8(r1)
+addi r1, r1, 0x20
+b mrSceneProbeReturn
+0x022F37F4 = mrSceneProbeReturn:
+0x022F37F0 = ba mrSceneProbe
 
 rrPoseHeader:
 .int 0x43545048
@@ -1226,10 +1899,139 @@ rrPoseLatch0:
 .int 0
 rrPoseUsed:
 .int 0
-rrDioramaDistance:
-.int 0x3F266666
-rrDioramaAdvance:
-.int 0x3EB33333
+mrEyeTarget:
+.int 0
+.int 0
+.int 0
+.int 0x43110000
+.int 0x42C80000
+.int 0x3F2147AE
+mrSceneClass:
+.int 0
+mrLookCos:
+.int 0x3F800000
+mrLookSin:
+.int 0
+mrLookSinEff:
+.int 0
+.int 0x3D3EA2F1
+.int 0x3E19999A
+.int 0x3F800000
+.int 0x3F000000
+.int 0x00000000
+.int 0xBF666666
+.int 0x3E99999A
+
+mrLookInput:
+stwu r1, -0x30(r1)
+mflr r0
+stw r0, 0x34(r1)
+stw r4, 8(r1)
+stw r6, 12(r1)
+bl import.vpad.VPADRead
+lwz r4, 8(r1)
+lwz r6, 12(r1)
+cmpwi r3, 0
+ble mrLookInputDone
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lwz r7, 0(r4)
+lis r9, 2
+and r7, r7, r9
+lwz r9, 4(r8)
+stw r7, 4(r8)
+cmpwi r7, 0
+beq mtInputMode
+cmpw r7, r9
+beq mtInputMode
+lwz r7, 0(r8)
+cmpwi r7, 0
+li r7, 1
+beq mtStoreMode
+li r7, 0
+mtStoreMode:
+stw r7, 0(r8)
+lwz r7, 8(r8)
+addi r7, r7, 1
+stw r7, 8(r8)
+lis r9, mrLookCos@ha
+addi r9, r9, mrLookCos@l
+lis r7, 0x3F80
+stw r7, 0(r9)
+li r7, 0
+stw r7, 4(r9)
+stw r7, 8(r9)
+b mrLookInputDone
+mtInputMode:
+lwz r7, 0(r8)
+cmpwi r7, 1
+bne mrLookInputDone
+; SceneClass is cleared before calc, including the input poll. Use the last
+; actual camera selection, which survives that boundary and rejects fallback.
+lwz r7, 28(r8)
+cmpwi r7, 1
+bne mrLookInputDone
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f1, 0x14(r4)
+.int 0xFC400A10 ; fabs f2, f1
+mrLookNoReset:
+lfs f0, 16(r8)
+.int 0xFC020000 ; fcmpu cr0, f2, f0
+blt mrLookNoTurn
+lfs f0, 12(r8)
+fmuls f1, f1, f2
+fmuls f1, f1, f0
+lfs f4, 0(r8)
+lfs f5, 4(r8)
+fmuls f6, f1, f1
+lfs f7, 24(r8)
+fmuls f6, f6, f7
+lfs f7, 20(r8)
+fsubs f6, f7, f6
+fmuls f7, f4, f6
+fmuls f8, f5, f1
+fsubs f7, f7, f8
+fmuls f9, f5, f6
+fmuls f10, f4, f1
+fadds f9, f9, f10
+stfs f7, 0(r8)
+stfs f9, 4(r8)
+mrLookNoTurn:
+lfs f4, 0(r8)
+lfs f5, 4(r8)
+lfs f0, 28(r8)
+mr r10, r3
+cmpwi r10, 16
+ble mrLookSample
+li r10, 16
+mrLookSample:
+mr r11, r4
+li r9, 0
+mrLookNext:
+cmpw r9, r10
+bge mrLookInputDone
+lfs f1, 0x0C(r11)
+lfs f2, 0x10(r11)
+fmuls f6, f1, f4
+fmuls f7, f2, f5
+fadds f6, f6, f7
+fmuls f8, f2, f4
+fmuls f10, f1, f5
+fsubs f8, f8, f10
+stfs f6, 0x0C(r11)
+stfs f8, 0x10(r11)
+stfs f0, 0x14(r11)
+stfs f0, 0x18(r11)
+addi r11, r11, 0xAC
+addi r9, r9, 1
+b mrLookNext
+mrLookInputDone:
+lwz r0, 0x34(r1)
+mtlr r0
+addi r1, r1, 0x30
+blr
+0x0236CA4C = bla mrLookInput
 
 rrProjectionHeader:
 .int 0x4354504A
@@ -2205,78 +3007,6 @@ bgt mrUiClassifyLoop
 mrUiClassifyExit:
 blr
 
-; DIORAMA_INTRO_OBSERVER_BEGIN
-; Root Calc receives its scene-owner object in r31 at 022F37F0.
-; Preserve scratch registers and CR across the displaced mr r3,r31.
-mrSceneProbe:
-stwu r1, -0x20(r1)
-stw r0, 8(r1)
-.int 0x7C000026 ; mfcr r0
-stw r0, 12(r1)
-stw r11, 16(r1)
-stw r12, 20(r1)
-mr r3, r31
-lis r12, mrSceneClass@ha
-addi r12, r12, mrSceneClass@l
-li r11, 0
-stw r11, 0(r12)
-cmpwi r3, 0
-beq mrSceneDone
-lwz r11, 8(r3)
-cmpwi r11, 0
-beq mrSceneDone
-lis r0, 0x1000
-cmplw r11, r0
-blt mrSceneDone
-lis r0, 0x5000
-cmplw r11, r0
-bge mrSceneDone
-lwz r11, 0x5C(r11)
-cmpwi r11, 0
-beq mrSceneDone
-lis r0, 0x1000
-cmplw r11, r0
-blt mrSceneDone
-lis r0, 0x5000
-cmplw r11, r0
-bge mrSceneDone
-lwz r11, 0(r11)
-stw r11, 0(r12)
-mrSceneDone:
-lis r11, rrDioramaDistance@ha
-lis r0, 0x3F26
-ori r0, r0, 0x6666
-stw r0, rrDioramaDistance@l(r11)
-lis r11, rrDioramaAdvance@ha
-lis r0, 0x3EB3
-ori r0, r0, 0x3333
-stw r0, rrDioramaAdvance@l(r11)
-lwz r11, 0(r12)
-lis r0, 0x1027
-ori r0, r0, 0xF388
-cmpw r11, r0
-bne mrIntroFactorsDone
-lis r11, rrDioramaDistance@ha
-lis r0, 0x3EBD
-ori r0, r0, 0x70A4
-stw r0, rrDioramaDistance@l(r11)
-lis r11, rrDioramaAdvance@ha
-lis r0, 0x3F21
-ori r0, r0, 0x47AE
-stw r0, rrDioramaAdvance@l(r11)
-mrIntroFactorsDone:
-lwz r12, 20(r1)
-lwz r11, 16(r1)
-lwz r0, 12(r1)
-.int 0x7C0FF120 ; mtcrf 255,r0
-lwz r0, 8(r1)
-addi r1, r1, 0x20
-b mrSceneProbeReturn
-0x022F37F4 = mrSceneProbeReturn:
-0x022F37F0 = ba mrSceneProbe
-mrSceneClass:
-.int 0
-; DIORAMA_INTRO_OBSERVER_END
 ; MCUL v1: epoch/count/builds/tests/rescues/invalid/overflow/native-visible.
 mrCullHeader:
 .int 0x4D43554C
@@ -3002,34 +3732,6 @@ add r12, r12, r11
 mr r9, r6
 lis r8, mrCullOne@ha
 lfs f3, mrCullOne@l(r8)
-lis r8, rrCameraMinusOne@ha
-addi r8, r8, rrCameraMinusOne@l
-lfs f4, 0(r8)
-lfs f1, 52(r3)
-lfs f2, 64(r3)
-fmuls f2, f2, f4
-fadds f1, f1, f2
-lfs f2, 32(r3)
-fmuls f1, f1, f2
-fmuls f5, f1, f3
-lfs f1, 56(r3)
-lfs f2, 68(r3)
-fmuls f2, f2, f4
-fadds f1, f1, f2
-lfs f2, 36(r3)
-fmuls f1, f1, f2
-fadds f5, f5, f1
-lfs f1, 60(r3)
-lfs f2, 72(r3)
-fmuls f2, f2, f4
-fadds f1, f1, f2
-lfs f2, 40(r3)
-fmuls f1, f1, f2
-fadds f5, f5, f1
-lis r8, rrDioramaAdvance@ha
-addi r8, r8, rrDioramaAdvance@l
-lfs f6, 0(r8)
-fmuls f6, f6, f5
 lfs f1, 0(r12)
 lfs f2, 0(r3)
 fmuls f1, f1, f2
@@ -3081,9 +3783,35 @@ lfs f1, 8(r12)
 lfs f2, 44(r3)
 fmuls f1, f1, f2
 fadds f0, f0, f1
-lfs f1, 8(r12)
-fmuls f1, f1, f6
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 0(r9)
+lfs f2, 8(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 0(r9)
+stfs f7, 8(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 0(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
 fadds f0, f0, f1
+lfs f1, 8(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+.int 0xFC000050 ; fneg f0, f0
 lfs f1, 12(r12)
 fadds f0, f0, f1
 stfs f0, 12(r9)
@@ -3138,9 +3866,35 @@ lfs f1, 24(r12)
 lfs f2, 44(r3)
 fmuls f1, f1, f2
 fadds f0, f0, f1
-lfs f1, 24(r12)
-fmuls f1, f1, f6
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 16(r9)
+lfs f2, 24(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 16(r9)
+stfs f7, 24(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 16(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
 fadds f0, f0, f1
+lfs f1, 24(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+.int 0xFC000050 ; fneg f0, f0
 lfs f1, 28(r12)
 fadds f0, f0, f1
 stfs f0, 28(r9)
@@ -3195,9 +3949,35 @@ lfs f1, 40(r12)
 lfs f2, 44(r3)
 fmuls f1, f1, f2
 fadds f0, f0, f1
-lfs f1, 40(r12)
-fmuls f1, f1, f6
+lis r8, mrLookCos@ha
+addi r8, r8, mrLookCos@l
+lfs f4, 0(r8)
+lfs f5, 8(r8)
+lfs f1, 32(r9)
+lfs f2, 40(r9)
+fmuls f0, f1, f4
+fmuls f6, f2, f5
+fsubs f0, f0, f6
+fmuls f7, f1, f5
+fmuls f8, f2, f4
+fadds f7, f7, f8
+stfs f0, 32(r9)
+stfs f7, 40(r9)
+lis r8, mrEyeTarget@ha
+addi r8, r8, mrEyeTarget@l
+lfs f1, 32(r9)
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r9)
+lfs f2, 4(r8)
+fmuls f1, f1, f2
 fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+.int 0xFC000050 ; fneg f0, f0
 lfs f1, 44(r12)
 fadds f0, f0, f1
 stfs f0, 44(r9)
@@ -3504,3 +4284,39 @@ lwz r0, 0x44(r1)
 mtlr r0
 addi r1, r1, 0x40
 blr
+
+rrDioramaDistance:
+.int 0x3F266666
+rrDioramaAdvance:
+.int 0x3EB33333
+; mode, previous R3 hold, generation, anchored generation, centre xyz,
+; effective mode, slot0 mode/generation, slot1 mode/generation, -0.5, 0.1, 1.
+mtControl:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0xBF000000
+.int 0x3DCCCCCD
+.int 0x3F800000
+mtPoseScratch:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0

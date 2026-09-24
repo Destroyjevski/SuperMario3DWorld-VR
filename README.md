@@ -1,6 +1,6 @@
 # Super Mario 3D World VR
 
-**Alpha 1.0** · Windows x64 · Cemu · OpenXR
+**Alpha 1.1** · Windows x64 · Cemu · OpenXR
 
 Stereo rendering and six-degree-of-freedom head tracking for the Wii U
 version of **Super Mario 3D World**. Play with a gamepad in either diorama
@@ -11,19 +11,23 @@ or first-person mode.
 
 ## Choose a mode
 
-| Mode | Launcher | View |
+| Mode | Selection | View |
 | --- | --- | --- |
-| **Diorama** | `Start-VR.cmd` | View the level as a diorama. |
-| **First person** | `Start-VR-FirstPerson.cmd` | View from the character, with free stick turning. |
+| **Diorama** | Default on start | View the level as a diorama. |
+| **First person** | Click the right stick (R3) | View from the character, with free 360-degree stick turning. |
+
+Run `Start-VR.cmd`. Click **R3** in a level to switch modes without restarting
+Cemu; click again to return. Each switch also resets camera turning and
+recentres your headset position. Intro and world map use the diorama view.
 
 Both modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
 
 ## Get started
 
-1. Download the **Alpha 1.0 installation ZIP** from [Releases](../../releases).
+1. Download the **Alpha 1.1 installation ZIP** from [Releases](../../releases).
 2. Place its `Mario3DWorld-VR` folder beside `Cemu.exe`.
-3. Close Cemu and run the launcher for your preferred mode.
+3. Close Cemu and run `Start-VR.cmd`.
 4. Open Super Mario 3D World in Cemu and play with your gamepad.
 
 Use the installation ZIP to play. GitHub's **Code → Download ZIP** contains
@@ -52,8 +56,8 @@ Cemu and the game are not included.
 | --- | --- |
 | Head movement | Look around and move your viewpoint in VR |
 | Gamepad | Normal game controls |
-| Right stick left/right, first person | Turn the view |
-| Right stick straight down, first person | Reset stick turning to the game's camera direction |
+| Right stick click (R3) | Switch Diorama / First Person, reset camera turning and recentre head position |
+| Right stick left/right, first person | Turn freely through 360 degrees |
 | Left stick, first person | Move relative to the stick-turned view |
 
 The HUD stays in the room as you turn. Head tracking remains separate from

@@ -1,3 +1,21 @@
+# Alpha 1.1
+
+## Added
+
+- Switch between Diorama and First Person in a level with R3 (right-stick click),
+  without restarting Cemu.
+- Each switch resets camera turning and recentres headset position.
+- Continuous 360-degree right-stick turning in First Person; R3 handles reset.
+
+## Launcher
+
+- One launcher, `Start-VR.cmd`, starts in Diorama; R3 switches modes in game.
+- Verbose Cemu debug logging is disabled for the session and restored on exit.
+
+Compatibility and existing alpha limitations remain unchanged.
+
+---
+
 # Alpha 1.0
 
 Initial alpha release of Super Mario 3D World VR for Cemu.
