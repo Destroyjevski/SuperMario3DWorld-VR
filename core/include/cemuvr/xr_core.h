@@ -159,6 +159,31 @@ struct XrCoreStats {
     uint32_t lastEyeChecksum[2]{0, 0};
 };
 
+// Tasten eines VR-Controllers, so wie die Schicht sie meldet. Bewusst
+// abstrakt: welcher Knopf eines konkreten Controllers das ist, entscheiden
+// die Bindungen, nicht der Gast.
+enum : uint32_t {
+    kPadPrimary   = 1u << 0,   // A beziehungsweise X
+    kPadSecondary = 1u << 1,   // B beziehungsweise Y
+    kPadStick     = 1u << 2,   // Stickklick
+    kPadMenu      = 1u << 3,
+    kPadTrigger   = 1u << 4,   // aus dem Analogwert abgeleitet
+    kPadSqueeze   = 1u << 5,
+};
+
+// Was eine Hand gerade meldet. Die Pose steht in DEMSELBEN Bezugsraum wie die
+// Kopfpose -- ohne den gemeinsamen Raum liesse sich nicht fragen, ob eine Hand
+// am Kopf ist, und genau diese Geste soll das Steuerkreuz aufschalten.
+struct ControllerInput {
+    uint32_t valid{0};        // 1 = verbunden und geortet
+    XrPosef  pose{};
+    uint32_t buttons{0};
+    float    trigger{0.0f};
+    float    squeeze{0.0f};
+    float    stickX{0.0f};
+    float    stickY{0.0f};
+};
+
 class XrCore {
 public:
     XrCore() = default;
@@ -220,6 +245,15 @@ public:
               {p.position.x,p.position.y,p.position.z}};
         return true;
     }
+
+    // --- VR-Controller ---------------------------------------------------
+    // Gueltig ab dem ersten beginFrame nach dem Aufbau. Ohne Controller oder
+    // ohne Fokus bleibt `valid` null; das ist derselbe Zustand wie ein
+    // abgelegter Controller und kein Sonderfall.
+    const ControllerInput& controller(int hand) const { return m_hands[hand & 1]; }
+    // Steigt mit jedem abgeholten Satz. Der Gast erkennt daran einen alten.
+    uint32_t controllerGeneration() const { return m_handGeneration; }
+    bool controllersReady() const { return m_actionsReady; }
 
     // Vom Spielprofil gelieferte Anpassung fuer das naechste endFrame.
     // Der Kern wendet sie auf die Projektionsebene DIESES Auges an.
@@ -309,6 +343,31 @@ private:
     XrSession   m_session{XR_NULL_HANDLE};
     XrSpace     m_stageSpace{XR_NULL_HANDLE};
     XrSpace     m_viewSpace{XR_NULL_HANDLE};
+
+    // --- VR-Controller (xr_actions.cpp) ---------------------------------
+    bool createActions();
+    void syncActions();
+    void pulseAtHead();
+    void destroyActions();
+
+    XrActionSet m_actionSet{XR_NULL_HANDLE};
+    XrAction    m_actPose{XR_NULL_HANDLE};
+    XrAction    m_actTrigger{XR_NULL_HANDLE};
+    XrAction    m_actSqueeze{XR_NULL_HANDLE};
+    XrAction    m_actStick{XR_NULL_HANDLE};
+    XrAction    m_actPrimary{XR_NULL_HANDLE};
+    XrAction    m_actSecondary{XR_NULL_HANDLE};
+    XrAction    m_actStickClick{XR_NULL_HANDLE};
+    XrAction    m_actMenu{XR_NULL_HANDLE};
+    XrAction    m_actHaptic{XR_NULL_HANDLE};
+    // Wahr, solange die linke Hand am Kopf ist. Nur die steigende Flanke
+    // loest aus - ein Puls, der sich wiederholt, waere ein Brummen.
+    bool        m_handAtHead{false};
+    std::array<XrPath, 2>  m_handPath{{XR_NULL_PATH, XR_NULL_PATH}};
+    std::array<XrSpace, 2> m_handSpace{{XR_NULL_HANDLE, XR_NULL_HANDLE}};
+    std::array<ControllerInput, 2> m_hands{};
+    uint32_t m_handGeneration{0};
+    bool     m_actionsReady{false};
 
     ID3D11Device*        m_device{nullptr};
     ID3D11DeviceContext* m_ctx{nullptr};

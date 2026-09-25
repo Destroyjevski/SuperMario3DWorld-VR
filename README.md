@@ -1,6 +1,6 @@
 # Super Mario 3D World VR
 
-**Alpha 1.1** · Windows x64 · Cemu · OpenXR
+**Alpha 1.2** · Windows x64 · Cemu · OpenXR
 
 Stereo rendering and six-degree-of-freedom head tracking for the Wii U
 version of **Super Mario 3D World**. Play with a gamepad in either diorama
@@ -23,12 +23,28 @@ recentres your headset position. Intro and world map use the diorama view.
 Both modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
 
+## New in Alpha 1.2
+
+- **VR controller input**, alongside gamepad support, with no button mapping
+  required in Cemu. Emulated controller 1 must be a Wii U GamePad.
+- **D-pad gesture:** hold the left controller near your head to use the right
+  stick as the D-pad, with a short haptic pulse when the gesture engages.
+- **Selectable mode-switch button** in the VR graphic pack settings. The
+  right VR controller's stick click also switches modes.
+- **First-person camera improvements:** a level horizon, closer near clipping,
+  hidden player model, and visibility checks aligned with the VR camera.
+- Depth of field, flare filtering and god rays are disabled for VR.
+
+See [release notes](RELEASE_NOTES.md) for details and [installation](INSTALL.md)
+for controller bindings. Lighting, shadows and depth effects still have
+limitations; see [known issues](KNOWN-ISSUES.md).
+
 ## Get started
 
-1. Download the **Alpha 1.1 installation ZIP** from [Releases](../../releases).
+1. Download the **Alpha 1.2 installation ZIP** from [Releases](../../releases).
 2. Place its `Mario3DWorld-VR` folder beside `Cemu.exe`.
 3. Close Cemu and run `Start-VR.cmd`.
-4. Open Super Mario 3D World in Cemu and play with your gamepad.
+4. Open Super Mario 3D World in Cemu and play with your gamepad or VR controllers.
 
 Use the installation ZIP to play. GitHub's **Code → Download ZIP** contains
 source code and requires building the VR layer first.
@@ -44,7 +60,7 @@ See [INSTALL.md](INSTALL.md) for headset setup, graphics settings and FPS option
 | Game | European Wii U base game **v0**, without an update |
 | Game identifiers | Title ID `0005000010145D00` · module checksum `D2308838` |
 | VR | An active OpenXR headset runtime |
-| Input | A gamepad configured in Cemu |
+| Input | A configured gamepad or supported OpenXR VR controllers; emulated controller 1 must be a Wii U GamePad |
 
 Headset testing used an RTX 4080 and Virtual Desktop/VDXR at 120 Hz.
 Other hardware, runtimes and game versions have not been validated.
@@ -59,6 +75,9 @@ Cemu and the game are not included.
 | Right stick click (R3) | Switch Diorama / First Person, reset camera turning and recentre head position |
 | Right stick left/right, first person | Turn freely through 360 degrees |
 | Left stick, first person | Move relative to the stick-turned view |
+
+For VR controller bindings and alternative mode-switch buttons, see
+[INSTALL.md](INSTALL.md#controls).
 
 The HUD stays in the room as you turn. Head tracking remains separate from
 stick turning.

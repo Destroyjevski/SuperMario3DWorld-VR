@@ -365,6 +365,11 @@ bool XrCore::createSession(ID3D11Device* device) {
              "xrCreateReferenceSpace(VIEW)");
     CVR_INFO("xr.space", "stage=1 view=1");
 
+    // Die Controller sind eine Zugabe, keine Bedingung. Ohne sie lief der Mod
+    // vorher, und ohne sie muss er weiterlaufen.
+    if (!createActions())
+        CVR_WARN("xr.action", "ready=0 falling_back_to_pad_only=1");
+
     if (!createSwapchains()) return false;
 
     m_state = XrState::SessionCreated;
@@ -455,6 +460,9 @@ void XrCore::shutdown() {
     }
     if(m_hudChain.handle)xrDestroySwapchain(m_hudChain.handle);
     m_hudChain={};m_hudAnchorSet=false;m_hudReady=false;m_hudPlacement={};
+    // Vor den Raeumen: die Handraeume gehoeren zur Sitzung und muessen
+    // weg, bevor sie zerstoert wird.
+    destroyActions();
     if (m_viewSpace  != XR_NULL_HANDLE) { xrDestroySpace(m_viewSpace);  m_viewSpace  = XR_NULL_HANDLE; }
     if (m_stageSpace != XR_NULL_HANDLE) { xrDestroySpace(m_stageSpace); m_stageSpace = XR_NULL_HANDLE; }
     if (m_session    != XR_NULL_HANDLE) { xrDestroySession(m_session);  m_session    = XR_NULL_HANDLE; }
@@ -645,6 +653,10 @@ bool XrCore::beginFrame() {
     ++m_pairId;   // ein XR-Frame traegt genau ein Augenpaar
 
     m_viewsValid = locateViews();
+    // Gleiches Bild, gleicher Anzeigezeitpunkt, gleicher Bezugsraum wie die
+    // Augen. Alles andere waere ein Abstand zwischen Hand und Kopf, der zwei
+    // verschiedene Momente vergleicht.
+    syncActions();
     return true;
 }
 

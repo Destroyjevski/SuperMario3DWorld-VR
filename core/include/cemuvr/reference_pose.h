@@ -33,6 +33,30 @@ inline bool referenceRotation(const CemuVR_Quat& q, float r[3][3]) {
     r[2][0]=s*(x*z-y*w);r[2][1]=s*(y*z+x*w);r[2][2]=1-s*(x*x+y*y);
     return true;
 }
+// Eine Pose in DEMSELBEN Bezugsraum und Massstab, in dem auch die
+// Augenmatrizen stehen: Ursprung im Anker, Achsen des Ankers, Einheiten des
+// Spiels. Zeilenweise, wie der Kern Matrizen liefert, und anders als bei den
+// Augen ist das hier eine Lage und keine Blickmatrix - fuer einen Abstand
+// zwischen Hand und Kopf braucht man Punkte, keine Ansichten.
+inline bool referencePoseInAnchor(const CemuVR_Pose& anchor,const CemuVR_Pose& pose,
+                                  float scale,float out[12]) {
+    float a[3][3],h[3][3];
+    if (!std::isfinite(scale) || scale<=0 || !referenceRotation(anchor.orientation,a)
+        || !referenceRotation(pose.orientation,h)) return false;
+    const float t[3]={pose.position.x-anchor.position.x,pose.position.y-anchor.position.y,
+                      pose.position.z-anchor.position.z};
+    for(int i=0;i<3;++i) {
+        if(!std::isfinite(t[i]))return false;
+        for(int j=0;j<3;++j) {
+            out[i*4+j]=0;
+            for(int k=0;k<3;++k)out[i*4+j]+=a[k][i]*h[k][j];
+        }
+        out[i*4+3]=0;
+        for(int k=0;k<3;++k)out[i*4+3]+=a[k][i]*t[k]*scale;
+    }
+    for(int i=0;i<12;++i)if(!std::isfinite(out[i]))return false;
+    return true;
+}
 inline bool referencePoseDelta(const CemuVR_Pose& anchor,const CemuVR_Pose& eye,
                                float scale,float out[12]) {
     float a[3][3],e[3][3];

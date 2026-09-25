@@ -249,12 +249,139 @@ lwz r11, 208(r8)
 stw r11, 188(r12)
 lwz r11, 212(r8)
 stw r11, 192(r12)
+; The controllers, copied under the same sequence guard as the pose.
+lis r10, mtPad@ha
+addi r10, r10, mtPad@l
+lwz r11, 216(r8)
+stw r11, 0(r10)
+lwz r11, 220(r8)
+stw r11, 4(r10)
+lwz r11, 224(r8)
+stw r11, 8(r10)
+lwz r11, 228(r8)
+stw r11, 12(r10)
+lwz r11, 232(r8)
+stw r11, 16(r10)
+lwz r11, 236(r8)
+stw r11, 20(r10)
+lwz r11, 240(r8)
+stw r11, 24(r10)
+lwz r11, 244(r8)
+stw r11, 28(r10)
+lwz r11, 248(r8)
+stw r11, 32(r10)
+lwz r11, 252(r8)
+stw r11, 36(r10)
+lwz r11, 256(r8)
+stw r11, 40(r10)
+lwz r11, 260(r8)
+stw r11, 44(r10)
+lwz r11, 264(r8)
+stw r11, 48(r10)
+lwz r11, 268(r8)
+stw r11, 52(r10)
+lwz r11, 272(r8)
+stw r11, 56(r10)
+lwz r11, 276(r8)
+stw r11, 60(r10)
+lwz r11, 280(r8)
+stw r11, 64(r10)
+lwz r11, 284(r8)
+stw r11, 68(r10)
+lwz r11, 288(r8)
+stw r11, 72(r10)
+lwz r11, 292(r8)
+stw r11, 76(r10)
+lwz r11, 296(r8)
+stw r11, 80(r10)
+lwz r11, 300(r8)
+stw r11, 84(r10)
+lwz r11, 304(r8)
+stw r11, 88(r10)
+lwz r11, 308(r8)
+stw r11, 92(r10)
+lwz r11, 312(r8)
+stw r11, 96(r10)
+lwz r11, 316(r8)
+stw r11, 100(r10)
+lwz r11, 320(r8)
+stw r11, 104(r10)
+lwz r11, 324(r8)
+stw r11, 108(r10)
+lwz r11, 328(r8)
+stw r11, 112(r10)
+lwz r11, 332(r8)
+stw r11, 116(r10)
+lwz r11, 336(r8)
+stw r11, 120(r10)
+lwz r11, 340(r8)
+stw r11, 124(r10)
+lwz r11, 344(r8)
+stw r11, 128(r10)
+lwz r11, 348(r8)
+stw r11, 132(r10)
+lwz r11, 352(r8)
+stw r11, 136(r10)
+lwz r11, 356(r8)
+stw r11, 140(r10)
+lwz r11, 360(r8)
+stw r11, 144(r10)
+lwz r11, 364(r8)
+stw r11, 148(r10)
+lwz r11, 368(r8)
+stw r11, 152(r10)
+lwz r11, 372(r8)
+stw r11, 156(r10)
 .int 0x7C2004AC ; lwsync
 lwz r11, 8(r8)
 cmpw r7, r11
 bne rrPoseLatchDone
 stw r7, 0(r12)
 rrPoseLatchDone:
+; The camera switch off the right controller's stick click. This path never
+; touches Cemu's input configuration, which is where the reported failures live.
+lis r9, mtPad@ha
+addi r9, r9, mtPad@l
+lwz r7, 0(r9)
+cmpwi r7, 0
+beq mtPadDone
+li r7, 0
+lwz r10, 88(r9)
+cmpwi r10, 0
+beq mtPadStore
+lwz r10, 140(r9)
+li r11, 4
+and r10, r10, r11
+cmpwi r10, 0
+beq mtPadStore
+li r7, 1
+mtPadStore:
+lis r10, mtControl@ha
+addi r10, r10, mtControl@l
+lwz r11, 68(r10)
+stw r7, 68(r10)
+cmpwi r7, 0
+beq mtPadDone
+cmpw r7, r11
+beq mtPadDone
+lwz r7, 0(r10)
+cmpwi r7, 0
+li r7, 1
+beq mtPadFlip
+li r7, 0
+mtPadFlip:
+stw r7, 0(r10)
+lwz r7, 8(r10)
+addi r7, r7, 1
+stw r7, 8(r10)
+lis r10, mrLookCos@ha
+addi r10, r10, mrLookCos@l
+lis r7, 0x3F80
+stw r7, 0(r10)
+li r7, 0
+stw r7, 4(r10)
+stw r7, 8(r10)
+mtPadDone:
 lis r8, mtControl@ha
 addi r8, r8, mtControl@l
 lis r11, rrSlot@ha
@@ -850,11 +977,266 @@ fadds f0, f0, f1
 stfs f0, 4(r7)
 lfs f0, 1984(r11)
 stfs f0, 8(r7)
+stwu r1, -0x20(r1)
+stw r5, 8(r1)
+stw r6, 12(r1)
+stw r9, 16(r1)
+stw r10, 20(r1)
+stw r12, 24(r1)
+mr r7, r11
+lis r10, mtHideModel@ha
+addi r10, r10, mtHideModel@l
+li r0, 0
+stw r0, 16(r10)
+lis r12, mtHideActor@ha
+addi r12, r12, mtHideActor@l
+stw r11, 0(r12)
+lwz r7, 252(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+lwz r6, 24(r7)
+cmplwi r6, 7
+bgt mtHideDrawParts
+lwz r7, 20(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+mulli r6, r6, 4
+add r7, r7, r6
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+mr r9, r7
+lwz r7, 68(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+lwz r7, 8(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawParts
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawParts
+andi. r0, r7, 3
+bne mtHideDrawParts
+stw r7, 0(r10)
+stw r7, 20(r10)
+li r0, 1
+stw r0, 16(r10)
+lwz r7, 112(r9)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideCaptureStamp
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideCaptureStamp
+andi. r0, r7, 3
+bne mtHideCaptureStamp
+lwz r6, 8(r7)
+cmplwi r6, 16
+bgt mtHideCaptureStamp
+cmpwi r6, 0
+beq mtHideCaptureStamp
+lwz r5, 12(r7)
+lis r11, 0x1000
+cmplw r5, r11
+blt mtHideCaptureStamp
+lis r11, 0x5000
+cmplw r5, r11
+bge mtHideCaptureStamp
+andi. r0, r5, 3
+bne mtHideCaptureStamp
+li r9, 0
+mtHideChildLoop:
+add r7, r5, r9
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideChildNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideChildNext
+andi. r0, r7, 3
+bne mtHideChildNext
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideChildNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideChildNext
+andi. r0, r7, 3
+bne mtHideChildNext
+lwz r7, 68(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideChildNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideChildNext
+andi. r0, r7, 3
+bne mtHideChildNext
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideChildNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideChildNext
+andi. r0, r7, 3
+bne mtHideChildNext
+lwz r7, 8(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideChildNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideChildNext
+andi. r0, r7, 3
+bne mtHideChildNext
+lwz r12, 16(r10)
+mulli r0, r12, 4
+add r12, r10, r0
+stw r7, 20(r12)
+lwz r12, 16(r10)
+addi r12, r12, 1
+stw r12, 16(r10)
+mtHideChildNext:
+addi r9, r9, 4
+addi r6, r6, -1
+cmpwi r6, 0
+bgt mtHideChildLoop
+mtHideCaptureStamp:
+lwz r0, 12(r10)
+stw r0, 4(r10)
+mtHideDrawParts:
+lis r7, mtHideActor@ha
+addi r7, r7, mtHideActor@l
+lwz r7, 0(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideCaptureDone
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideCaptureDone
+andi. r0, r7, 3
+bne mtHideCaptureDone
+lwz r7, 252(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideCaptureDone
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideCaptureDone
+andi. r0, r7, 3
+bne mtHideCaptureDone
+lwz r7, 172(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideCaptureDone
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideCaptureDone
+andi. r0, r7, 3
+bne mtHideCaptureDone
+mr r9, r7
+li r6, 48
+mtHideDrawLoop:
+lwz r12, 16(r10)
+cmplwi r12, 17
+bge mtHideCaptureDone
+add r5, r9, r6
+lwz r7, 0(r5)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawNext
+andi. r0, r7, 3
+bne mtHideDrawNext
+lwz r7, 56(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawNext
+andi. r0, r7, 3
+bne mtHideDrawNext
+lwz r7, 724(r7)
+lis r11, 0x1000
+cmplw r7, r11
+blt mtHideDrawNext
+lis r11, 0x5000
+cmplw r7, r11
+bge mtHideDrawNext
+andi. r0, r7, 3
+bne mtHideDrawNext
+mulli r5, r12, 4
+add r5, r10, r5
+stw r7, 20(r5)
+addi r12, r12, 1
+stw r12, 16(r10)
+mtHideDrawNext:
+addi r6, r6, 4
+cmpwi r6, 80
+blt mtHideDrawLoop
+mtHideCaptureDone:
+lwz r5, 8(r1)
+lwz r6, 12(r1)
+lwz r9, 16(r1)
+lwz r10, 20(r1)
+lwz r12, 24(r1)
+addi r1, r1, 0x20
 b mtPreparePose
 mtUseDiorama:
 li r0, 0
 stw r0, 28(r8)
 mtPreparePose:
+; Latch the validated FP mode alongside this camera's slot/eye.
+lis r7, rrSlot@ha
+lwz r7, rrSlot@l(r7)
+mulli r7, r7, 2
+add r7, r7, r10
+mulli r7, r7, 4
+lis r11, mtNearState@ha
+addi r11, r11, mtNearState@l
+add r11, r11, r7
+lwz r0, 28(r8)
+stw r0, 0(r11)
 ; Private per-call pose. Never change the shared pose mailbox or its stamp.
 lis r11, mtPoseScratch@ha
 addi r11, r11, mtPoseScratch@l
@@ -882,6 +1264,42 @@ lwz r7, 40(r12)
 stw r7, 40(r11)
 lwz r7, 44(r12)
 stw r7, 44(r11)
+lwz r0, 28(r8)
+cmpwi r0, 1
+bne mtLevelDone
+lfs f5, 20(r3)
+lfs f6, 36(r3)
+lfs f1, 4(r11)
+lfs f2, 8(r11)
+fmuls f0, f1, f5
+fmuls f7, f2, f6
+fsubs f0, f0, f7
+fmuls f8, f1, f6
+fmuls f9, f2, f5
+fadds f8, f8, f9
+stfs f0, 4(r11)
+stfs f8, 8(r11)
+lfs f1, 20(r11)
+lfs f2, 24(r11)
+fmuls f0, f1, f5
+fmuls f7, f2, f6
+fsubs f0, f0, f7
+fmuls f8, f1, f6
+fmuls f9, f2, f5
+fadds f8, f8, f9
+stfs f0, 20(r11)
+stfs f8, 24(r11)
+lfs f1, 36(r11)
+lfs f2, 40(r11)
+fmuls f0, f1, f5
+fmuls f7, f2, f6
+fsubs f0, f0, f7
+fmuls f8, f1, f6
+fmuls f9, f2, f5
+fadds f8, f8, f9
+stfs f0, 36(r11)
+stfs f8, 40(r11)
+mtLevelDone:
 lfs f4, 56(r8)
 lwz r0, 28(r8)
 cmpwi r0, 1
@@ -933,6 +1351,34 @@ fmuls f1, f1, f2
 fadds f0, f0, f1
 fmuls f0, f0, f4
 stfs f0, 44(r11)
+lis r7, mtPoseEye@ha
+addi r7, r7, mtPoseEye@l
+mulli r0, r10, 48
+add r7, r7, r0
+lwz r0, 0(r11)
+stw r0, 0(r7)
+lwz r0, 4(r11)
+stw r0, 4(r7)
+lwz r0, 8(r11)
+stw r0, 8(r7)
+lwz r0, 12(r11)
+stw r0, 12(r7)
+lwz r0, 16(r11)
+stw r0, 16(r7)
+lwz r0, 20(r11)
+stw r0, 20(r7)
+lwz r0, 24(r11)
+stw r0, 24(r7)
+lwz r0, 28(r11)
+stw r0, 28(r7)
+lwz r0, 32(r11)
+stw r0, 32(r7)
+lwz r0, 36(r11)
+stw r0, 36(r7)
+lwz r0, 40(r11)
+stw r0, 40(r7)
+lwz r0, 44(r11)
+stw r0, 44(r7)
 mr r12, r11
 lwz r0, 28(r8)
 cmpwi r0, 1
@@ -1683,6 +2129,11 @@ stw r0, 8(r1)
 stw r0, 12(r1)
 stw r11, 16(r1)
 stw r12, 20(r1)
+lis r12, mtHideModel@ha
+addi r12, r12, mtHideModel@l
+lwz r11, 12(r12)
+addi r11, r11, 1
+stw r11, 12(r12)
 mr r3, r31
 lis r12, mrSceneClass@ha
 addi r12, r12, mrSceneClass@l
@@ -1745,7 +2196,47 @@ b mrSceneProbeReturn
 
 rrPoseHeader:
 .int 0x43545048
-.int 4
+.int 5
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
 .int 0
 .int 0
 .int 0
@@ -1933,11 +2424,263 @@ lwz r4, 8(r1)
 lwz r6, 12(r1)
 cmpwi r3, 0
 ble mrLookInputDone
+; Motion controls: the VR controllers are written into the pad state before
+; anything else reads it. Nothing here depends on Cemu's input configuration.
+lis r9, mtPad@ha
+addi r9, r9, mtPad@l
+lwz r11, 0(r9)
+cmpwi r11, 0
+beq mtMotionDone
+lis r7, mtMotionData@ha
+addi r7, r7, mtMotionData@l
+li r5, 0
+lis r6, 65535
+ori r6, r6, 65535
+lwz r11, 16(r9)
+cmpwi r11, 0
+beq mtMotionLeftDone
+lwz r11, 68(r9)
+li r12, 1
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit0
+ori r5, r5, 8192
+lis r12, 65535
+ori r12, r12, 57343
+and r6, r6, r12
+mtMotionLeftDoneBit0:
+li r12, 2
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit1
+ori r5, r5, 4096
+lis r12, 65535
+ori r12, r12, 61439
+and r6, r6, r12
+mtMotionLeftDoneBit1:
+li r12, 16
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit2
+ori r5, r5, 128
+lis r12, 65535
+ori r12, r12, 65407
+and r6, r6, r12
+mtMotionLeftDoneBit2:
+li r12, 32
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit3
+ori r5, r5, 32
+lis r12, 65535
+ori r12, r12, 65503
+and r6, r6, r12
+mtMotionLeftDoneBit3:
+li r12, 8
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit4
+ori r5, r5, 8
+lis r12, 65535
+ori r12, r12, 65527
+and r6, r6, r12
+mtMotionLeftDoneBit4:
+li r12, 4
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionLeftDoneBit5
+ori r5, r5, 4
+lis r12, 65535
+ori r12, r12, 65531
+and r6, r6, r12
+mtMotionLeftDoneBit5:
+mtMotionLeftDone:
+lwz r11, 88(r9)
+cmpwi r11, 0
+beq mtMotionRightDone
+lwz r11, 140(r9)
+li r12, 1
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionRightDoneBit0
+ori r5, r5, 32768
+lis r12, 65535
+ori r12, r12, 32767
+and r6, r6, r12
+mtMotionRightDoneBit0:
+li r12, 2
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionRightDoneBit1
+ori r5, r5, 8192
+lis r12, 65535
+ori r12, r12, 57343
+and r6, r6, r12
+mtMotionRightDoneBit1:
+li r12, 16
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionRightDoneBit2
+ori r5, r5, 16384
+lis r12, 65535
+ori r12, r12, 49151
+and r6, r6, r12
+mtMotionRightDoneBit2:
+li r12, 32
+and r12, r11, r12
+cmpwi r12, 0
+beq mtMotionRightDoneBit3
+ori r5, r5, 16
+lis r12, 65535
+ori r12, r12, 65519
+and r6, r6, r12
+mtMotionRightDoneBit3:
+mtMotionRightDone:
+li r8, 0
+lwz r11, 16(r9)
+cmpwi r11, 0
+beq mtMotionLeftStick
+lfs f4, 80(r9)
+lfs f5, 84(r9)
+fmuls f6, f4, f4
+fmuls f7, f5, f5
+fadds f6, f6, f7
+lfs f0, 0(r7)
+.int 0xFC060000 ; fcmpu cr0, f6, f0
+blt mtMotionLeftStick
+li r8, 1
+mtMotionLeftStick:
+li r10, 0
+lwz r11, 88(r9)
+cmpwi r11, 0
+beq mtMotionRightStick
+lfs f8, 152(r9)
+lfs f9, 156(r9)
+fmuls f6, f8, f8
+fmuls f7, f9, f9
+fadds f6, f6, f7
+lfs f0, 0(r7)
+.int 0xFC060000 ; fcmpu cr0, f6, f0
+blt mtMotionRightStick
+li r10, 1
+mtMotionRightStick:
+; Geste: linker Controller am Kopf schaltet das Steuerkreuz auf.
+li r11, 0
+lwz r12, 16(r9)
+cmpwi r12, 0
+beq mtMotionReach
+lfs f10, 4(r9)
+lfs f11, 32(r9)
+fsubs f10, f10, f11
+fmuls f12, f10, f10
+lfs f10, 8(r9)
+lfs f11, 48(r9)
+fsubs f10, f10, f11
+fmuls f10, f10, f10
+fadds f12, f12, f10
+lfs f10, 12(r9)
+lfs f11, 64(r9)
+fsubs f10, f10, f11
+fmuls f10, f10, f10
+fadds f12, f12, f10
+lfs f0, 4(r7)
+.int 0xFC0C0000 ; fcmpu cr0, f12, f0
+bge mtMotionReach
+li r11, 1
+mtMotionReach:
+cmpwi r11, 0
+beq mtMotionGestureDone
+lfs f10, 152(r9)
+lfs f11, 156(r9)
+lfs f0, 8(r7)
+.int 0xFC0A0000 ; fcmpu cr0, f10, f0
+ble mtMotionNoRight
+ori r5, r5, 1024
+lis r12, 65535
+ori r12, r12, 64511
+and r6, r6, r12
+mtMotionNoRight:
+lfs f0, 12(r7)
+.int 0xFC0A0000 ; fcmpu cr0, f10, f0
+bge mtMotionNoLeft
+ori r5, r5, 2048
+lis r12, 65535
+ori r12, r12, 63487
+and r6, r6, r12
+mtMotionNoLeft:
+lfs f0, 8(r7)
+.int 0xFC0B0000 ; fcmpu cr0, f11, f0
+ble mtMotionNoUp
+ori r5, r5, 512
+lis r12, 65535
+ori r12, r12, 65023
+and r6, r6, r12
+mtMotionNoUp:
+lfs f0, 12(r7)
+.int 0xFC0B0000 ; fcmpu cr0, f11, f0
+bge mtMotionNoDown
+ori r5, r5, 256
+lis r12, 65535
+ori r12, r12, 65279
+and r6, r6, r12
+mtMotionNoDown:
+li r10, 1
+lfs f8, 16(r7)
+lfs f9, 16(r7)
+mtMotionGestureDone:
+mr r0, r3
+cmpwi r0, 16
+blt mtMotionCount
+li r0, 16
+mtMotionCount:
+mulli r0, r0, 0xAC
+add r0, r0, r4
+mr r11, r4
+mtMotionNext:
+cmpw r11, r0
+bge mtMotionDone
+lwz r12, 0(r11)
+and r12, r12, r6
+add r12, r12, r5
+stw r12, 0(r11)
+cmpwi r8, 0
+beq mtMotionKeepLeft
+stfs f4, 12(r11)
+stfs f5, 16(r11)
+mtMotionKeepLeft:
+cmpwi r10, 0
+beq mtMotionKeepRight
+stfs f8, 20(r11)
+stfs f9, 24(r11)
+mtMotionKeepRight:
+addi r11, r11, 0xAC
+b mtMotionNext
+mtMotionDone:
 lis r8, mtControl@ha
 addi r8, r8, mtControl@l
 lwz r7, 0(r4)
-lis r9, 2
-and r7, r7, r9
+; Two configurable combinations, either of which switches. The test asks for
+; all bits of a mask, so one mask is a single button or a chord; a mask of
+; zero is switched off.
+li r5, 0
+lwz r9, 60(r8)
+cmpwi r9, 0
+beq mtToggleAlt
+and r12, r7, r9
+cmpw r12, r9
+bne mtToggleAlt
+li r5, 1
+b mtToggleState
+mtToggleAlt:
+lwz r9, 64(r8)
+cmpwi r9, 0
+beq mtToggleState
+and r12, r7, r9
+cmpw r12, r9
+bne mtToggleState
+li r5, 1
+mtToggleState:
+mr r7, r5
 lwz r9, 4(r8)
 stw r7, 4(r8)
 cmpwi r7, 0
@@ -2434,6 +3177,24 @@ stw r11, 160(r10)
 lwz r11, 80(r12)
 stw r11, 164(r10)
 rrScalarDone:
+; Only the copied projection changes. Native source and far plane stay intact.
+lis r11, rrSlot@ha
+lwz r0, rrSlot@l(r11)
+mulli r0, r0, 2
+lis r11, rrEye@ha
+lwz r12, rrEye@l(r11)
+add r0, r0, r12
+mulli r0, r0, 4
+lis r11, mtNearState@ha
+addi r11, r11, mtNearState@l
+add r12, r11, r0
+lwz r0, 0(r12)
+cmpwi r0, 1
+bne mtNearDone
+lwz r0, 16(r11)
+stw r0, 148(r10)
+
+mtNearDone:
 lwz r11, 0(r10)
 andi. r11, r11, 65535
 lis r0, 0x0101
@@ -3725,13 +4486,18 @@ addi r6, r6, 16
 li r10, 0
 mrCullBuildEye:
 lwz r3, 12(r1)
-lwz r12, 24(r1)
+lis r12, mtPoseEye@ha
+addi r12, r12, mtPoseEye@l
 mulli r11, r10, 48
-addi r12, r12, 4
 add r12, r12, r11
 mr r9, r6
 lis r8, mrCullOne@ha
 lfs f3, mrCullOne@l(r8)
+lis r11, mtControl@ha
+addi r11, r11, mtControl@l
+lwz r11, 28(r11)
+cmpwi r11, 1
+bne mtCullDiorama
 lfs f1, 0(r12)
 lfs f2, 0(r3)
 fmuls f1, f1, f2
@@ -3981,6 +4747,208 @@ fadds f0, f0, f1
 lfs f1, 44(r12)
 fadds f0, f0, f1
 stfs f0, 44(r9)
+b mtCullComposed
+mtCullDiorama:
+lis r8, rrCameraMinusOne@ha
+addi r8, r8, rrCameraMinusOne@l
+lfs f4, 0(r8)
+lfs f1, 52(r3)
+lfs f2, 64(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fmuls f5, f1, f3
+lfs f1, 56(r3)
+lfs f2, 68(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f5, f5, f1
+lfs f1, 60(r3)
+lfs f2, 72(r3)
+fmuls f2, f2, f4
+fadds f1, f1, f2
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f5, f5, f1
+lis r8, rrDioramaAdvance@ha
+addi r8, r8, rrDioramaAdvance@l
+lfs f6, 0(r8)
+fmuls f6, f6, f5
+lfs f1, 0(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 0(r9)
+lfs f1, 0(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 4(r9)
+lfs f1, 0(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 8(r9)
+lfs f1, 0(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 4(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r12)
+fmuls f1, f1, f6
+fadds f0, f0, f1
+lfs f1, 12(r12)
+fadds f0, f0, f1
+stfs f0, 12(r9)
+lfs f1, 16(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 16(r9)
+lfs f1, 16(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 20(r9)
+lfs f1, 16(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 24(r9)
+lfs f1, 16(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 20(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r12)
+fmuls f1, f1, f6
+fadds f0, f0, f1
+lfs f1, 28(r12)
+fadds f0, f0, f1
+stfs f0, 28(r9)
+lfs f1, 32(r12)
+lfs f2, 0(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 16(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 32(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 32(r9)
+lfs f1, 32(r12)
+lfs f2, 4(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 20(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 36(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 36(r9)
+lfs f1, 32(r12)
+lfs f2, 8(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 24(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 40(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 40(r9)
+lfs f1, 32(r12)
+lfs f2, 12(r3)
+fmuls f1, f1, f2
+fmuls f0, f1, f3
+lfs f1, 36(r12)
+lfs f2, 28(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+lfs f2, 44(r3)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r12)
+fmuls f1, f1, f6
+fadds f0, f0, f1
+lfs f1, 44(r12)
+fadds f0, f0, f1
+stfs f0, 44(r9)
+mtCullComposed:
 
 ; Clip inequalities: w +/- x and w +/- y, including off-axis offsets.
 lwz r12, 24(r1)
@@ -4289,8 +5257,10 @@ rrDioramaDistance:
 .int 0x3F266666
 rrDioramaAdvance:
 .int 0x3EB33333
-; mode, previous R3 hold, generation, anchored generation, centre xyz,
-; effective mode, slot0 mode/generation, slot1 mode/generation, -0.5, 0.1, 1.
+; mode, previous switch state, generation, anchored generation, centre xyz,
+; effective mode, slot0 mode/generation, slot1 mode/generation, -0.5, 0.1, 1,
+; the two switch combinations the player can choose in Cemu, and last the
+; previous state of the controller switch, which has its own edge.
 mtControl:
 .int 0
 .int 0
@@ -4307,6 +5277,9 @@ mtControl:
 .int 0xBF000000
 .int 0x3DCCCCCD
 .int 0x3F800000
+.int $switchMain
+.int $switchAlt
+.int 0
 mtPoseScratch:
 .int 0
 .int 0
@@ -4320,3 +5293,203 @@ mtPoseScratch:
 .int 0
 .int 0
 .int 0
+mtPoseEye:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+
+; First-person player visibility: render-only, original predicate in diorama.
+0x024E775C = mtHideNativeResume:
+mtHideShape:
+stwu r1, -0x20(r1)
+stw r0, 8(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 12(r1)
+stw r7, 16(r1)
+stw r8, 20(r1)
+stw r12, 24(r1)
+lis r7, mtControl@ha
+addi r7, r7, mtControl@l
+lwz r0, 0(r7)
+cmpwi r0, 1
+bne mtHidePass
+; Require the effective FP mode of this exact copied camera/eye as well.
+lis r7, rrSlot@ha
+lwz r0, rrSlot@l(r7)
+mulli r0, r0, 2
+lis r7, rrEye@ha
+lwz r12, rrEye@l(r7)
+add r0, r0, r12
+mulli r0, r0, 4
+lis r7, mtNearState@ha
+addi r7, r7, mtNearState@l
+add r7, r7, r0
+lwz r0, 0(r7)
+cmpwi r0, 1
+bne mtHidePass
+lis r8, mtHideModel@ha
+addi r8, r8, mtHideModel@l
+; Reject an identity older than two scene calculation ticks, including
+; across level changes. Unsigned subtraction also handles epoch wraparound.
+lwz r12, 12(r8)
+lwz r0, 4(r8)
+subf r12, r0, r12
+cmplwi r12, 2
+bgt mtHidePass
+lwz r12, 16(r8)
+cmplwi r12, 17
+bgt mtHidePass
+cmpwi r12, 0
+beq mtHidePass
+addi r7, r8, 20
+mtHideCompare:
+lwz r0, 0(r7)
+cmpw r3, r0
+beq mtHideMatched
+addi r7, r7, 4
+addi r12, r12, -1
+cmpwi r12, 0
+bgt mtHideCompare
+b mtHidePass
+mtHideMatched:
+lwz r12, 8(r8)
+addi r12, r12, 1
+stw r12, 8(r8)
+lwz r7, 16(r1)
+lwz r8, 20(r1)
+lwz r12, 24(r1)
+lwz r0, 12(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 8(r1)
+addi r1, r1, 0x20
+li r3, 0
+blr
+mtHidePass:
+lwz r7, 16(r1)
+lwz r8, 20(r1)
+lwz r12, 24(r1)
+lwz r0, 12(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 8(r1)
+addi r1, r1, 0x20
+lwz r11, 0(r3)
+b mtHideNativeResume
+0x024E7758 = ba mtHideShape
+mtHideModel:
+.int 0 ; runtime model pointer
+.int 0 ; most recent validated camera scene epoch
+.int 0 ; suppressed shape-query count (private diagnostics)
+.int 0 ; scene calculation epoch
+.int 0 ; captured model count
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+mtHideActor:
+.int 0
+
+mtNearState:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0x41200000
+.int 0x00000000
+
+mtPad:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+
+mtMotionData:
+.int 0x3CB851EC
+.int 0x4845C100
+.int 0x3F000000
+.int 0xBF000000
+.int 0x00000000
+
+; Depth of field off: take the branch the game takes when its own switch is
+; clear, so the pass is never entered and r8 keeps the previous target.
+0x024AD714 = mtDofSkip:
+0x024AD708 = b mtDofSkip
+
+; Glare off: take the branch the game takes when the flare filter's own switch
+; is clear, so the effect is never entered and r30 keeps the current target.
+0x022D874C = mtGlareSkip:
+0x022D86B8 = b mtGlareSkip
+
+; Light shafts off: take the branch the game takes when the god ray reports
+; nothing to do, so the effect is never entered and r30 keeps the target.
+0x022D8690 = mtGodRaySkip:
+0x022D85CC = b mtGodRaySkip

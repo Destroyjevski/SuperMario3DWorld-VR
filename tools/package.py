@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().replace(" ", "-")
 TEXT_ROOT = [
     "README.md", "INSTALL.md", "KNOWN-ISSUES.md", "RELEASE_NOTES.md",
-    "BUILD.md", "CREDITS.md", "THIRD-PARTY.txt", "LICENSE", "VERSION",
+    "CREDITS.md", "THIRD-PARTY.txt", "LICENSE", "VERSION", "BUILD.md",
 ]
 START_FILES = ["Start-VR.cmd", "Start-VR.ps1"]
 # The installation ZIP holds exactly one folder with this name. Copy it into

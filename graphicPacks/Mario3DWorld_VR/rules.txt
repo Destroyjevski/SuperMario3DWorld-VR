@@ -2,5 +2,42 @@
 titleIds = 0005000010145D00
 name = Super Mario 3D World VR
 path = "Super Mario 3D World/VR"
-description = Alpha 1.1: Stereo VR with head tracking, room-anchored HUD and R3 switching between diorama and first person.
+description = Stereo VR with head tracking, VR controllers as the pad, and a selectable button to switch between diorama and first person. EUR v0.
 version = 7
+
+# 131072 = right stick click, 262144 = left stick click, 192 = ZL+ZR held
+# together, 48 = L+R held together, 4 = minus. A value asks for all of its
+# bits at once, so a combination is a chord; 0 switches that slot off.
+[Default]
+$switchMain = 131072
+$switchAlt = 0
+
+[Preset]
+name = Right stick click (default)
+$switchMain = 131072
+$switchAlt = 0
+
+[Preset]
+name = Left stick click
+$switchMain = 262144
+$switchAlt = 0
+
+[Preset]
+name = Right or left stick click
+$switchMain = 131072
+$switchAlt = 262144
+
+[Preset]
+name = ZL + ZR together
+$switchMain = 192
+$switchAlt = 0
+
+[Preset]
+name = L + R together
+$switchMain = 48
+$switchAlt = 0
+
+[Preset]
+name = Minus
+$switchMain = 4
+$switchAlt = 0

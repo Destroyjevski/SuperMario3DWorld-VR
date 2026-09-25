@@ -8,7 +8,7 @@
 
 Special thanks to **Crementif and the contributors to
 [BetterVR / BotW-BetterVR](https://github.com/Crementif/BotW-BetterVR)**.
-Their implementation and research were an essential foundation for this port.
+Their implementation and research were an important technical foundation for this port.
 
 BetterVR provided implementation references and, where applicable,
 MIT-licensed groundwork for areas including:
@@ -22,14 +22,17 @@ MIT-licensed groundwork for areas including:
 
 Mario-specific hook addresses and game integration were determined separately.
 The Vulkan–D3D11 transport, pose protocol, pair validation and HUD placement
-were implemented or extended for these ports. Some groundwork carries over
-through the Captain Toad VR port. BetterVR's BotW-specific gameplay, weapon
+were implemented or extended for these ports. BetterVR's BotW-specific gameplay, weapon
 and motion-control systems are not used.
 
 BetterVR is MIT licensed: **Copyright (c) 2021 Crementif**.
 The unchanged license is included in [licenses/BetterVR-MIT.txt](licenses/BetterVR-MIT.txt)
 and is retained in the distributed release archives.
 This project is independent; no endorsement by Crementif or BetterVR is claimed.
+
+## Testing and feedback
+
+Thanks to JShodanVR for putting the early builds through their paces and sharing a lot of useful feedback and footage.
 
 ## Other components
 

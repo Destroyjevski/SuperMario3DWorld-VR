@@ -11,6 +11,7 @@ add_library(cemuvr_layer SHARED
     core/src/cemu_bridge.cpp
     core/src/profile_host.cpp
     core/src/xr_core.cpp
+    core/src/xr_actions.cpp
     core/cemuvr_layer.def
 )
 target_compile_features(cemuvr_layer PRIVATE cxx_std_17)

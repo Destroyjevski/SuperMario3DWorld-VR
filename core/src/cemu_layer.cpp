@@ -627,7 +627,7 @@ void publishReferencePose(uint64_t generation) {
             if(next<=off)break;
             uintptr_t end=(std::min)(next,uintptr_t(0x01a00000));
             if(mbi.State==MEM_COMMIT && (mbi.Protect&(PAGE_READWRITE|PAGE_EXECUTE_READWRITE)) && !(mbi.Protect&PAGE_GUARD))
-                for(uintptr_t p=off;p+192<=end;p+=4)if(!std::memcmp(base+p,sig,7) && (base[p+7]>=1 && base[p+7]<=4) && p+(base[p+7]==4?216:192)<=end) {
+                for(uintptr_t p=off;p+192<=end;p+=4)if(!std::memcmp(base+p,sig,7) && (base[p+7]>=1 && base[p+7]<=5) && p+(base[p+7]==5?376:base[p+7]==4?216:192)<=end) {
                     if(packet){mailboxFailed=true;packet=nullptr;CVR_ERR("reference.pose","ambiguous_mailbox=1");return;}
                     packet=base+p;
                     packetVersion=base[p+7];
@@ -684,7 +684,7 @@ void publishReferencePose(uint64_t generation) {
     }
     sequence+=2;if(!sequence)sequence=2;
     InterlockedExchange((volatile LONG*)(packet+8),_byteswap_ulong(sequence-1));
-    uint32_t payload[51]{};payload[0]=_byteswap_ulong(1);
+    uint32_t payload[91]{};payload[0]=_byteswap_ulong(1);
     payload[1]=_byteswap_ulong(uint32_t(fc.poseSerial));
     for(int i=0;i<24;++i){uint32_t bits;std::memcpy(&bits,&deltas[i],4);payload[i+3]=_byteswap_ulong(bits);}
     if(packetVersion>=2)for(int i=0;i<16;++i){uint32_t bits;std::memcpy(&bits,&projection[i],4);payload[i+27]=_byteswap_ulong(bits);}
@@ -695,7 +695,40 @@ void publishReferencePose(uint64_t generation) {
         referencePoseHistory[token%referencePoseHistory.size()]={token,fc};
     }
     if(packetVersion>=4)for(int i=0;i<6;++i){uint32_t bits;std::memcpy(&bits,&scalars[i],4);payload[45+i]=_byteswap_ulong(bits);}
-    std::memcpy(packet+12,payload,packetVersion>=4?204:packetVersion==3?180:packetVersion==2?172:108);
+    if(packetVersion>=5) {
+        auto putFloat=[&](int word,float value){uint32_t bits;std::memcpy(&bits,&value,4);
+                                                payload[word]=_byteswap_ulong(bits);};
+        payload[51]=_byteswap_ulong(g.xr.controllerGeneration());
+        // Der Kopf als Punkt: die Mitte zwischen den Augen, im selben Raum und
+        // Massstab wie alles andere. Der Gast koennte ihn aus den Augenmatrizen
+        // herausrechnen; ihn mitzuschicken erspart ihm eine Transposition an
+        // einer Stelle, an der ein Vorzeichenfehler lange unauffaellig bliebe.
+        CemuVR_Pose head=fc.eyePose[0];
+        head.position.x=(fc.eyePose[0].position.x+fc.eyePose[1].position.x)*.5f;
+        head.position.y=(fc.eyePose[0].position.y+fc.eyePose[1].position.y)*.5f;
+        head.position.z=(fc.eyePose[0].position.z+fc.eyePose[1].position.z)*.5f;
+        float headPose[12]{};
+        if(referencePoseInAnchor(candidate,head,unitsPerMeter,headPose))
+            for(int i=0;i<3;++i)putFloat(52+i,headPose[i*4+3]);
+        for(int hand=0;hand<2;++hand) {
+            const int base5=55+hand*18;
+            const auto& in=g.xr.controller(hand);
+            CemuVR_Pose handPose{{in.pose.orientation.x,in.pose.orientation.y,
+                                  in.pose.orientation.z,in.pose.orientation.w},
+                                 {in.pose.position.x,in.pose.position.y,in.pose.position.z}};
+            float m[12]{};
+            const bool located=in.valid &&
+                referencePoseInAnchor(candidate,handPose,unitsPerMeter,m);
+            payload[base5]=_byteswap_ulong(located?1u:0u);
+            for(int i=0;i<12;++i)putFloat(base5+1+i,located?m[i]:0.f);
+            payload[base5+13]=_byteswap_ulong(located?in.buttons:0u);
+            putFloat(base5+14,located?in.trigger:0.f);
+            putFloat(base5+15,located?in.squeeze:0.f);
+            putFloat(base5+16,located?in.stickX:0.f);
+            putFloat(base5+17,located?in.stickY:0.f);
+        }
+    }
+    std::memcpy(packet+12,payload,packetVersion>=5?364:packetVersion==4?204:packetVersion==3?180:packetVersion==2?172:108);
     InterlockedExchange((volatile LONG*)(packet+8),_byteswap_ulong(sequence));
     if(sequence<=8 || generation%120==0)
         CVR_INFO("reference.pose","sequence=%u serial=%llu after_generation=%llu Ltx=%.3f Rtx=%.3f r00=%.5f -- future guest camera experiment",
