@@ -106,6 +106,9 @@ work on Cemu VR. Their research and implementation provided an important
 technical foundation for this project. See [CREDITS.md](CREDITS.md) for
 acknowledgements and implementation background.
 
+Thanks to **JShodanVR** for putting the early builds through their paces and
+sharing useful feedback and footage.
+
 Original project code is licensed under [MIT](LICENSE). Third-party licenses
 are included in [licenses/](licenses/); see [THIRD-PARTY.txt](THIRD-PARTY.txt)
 for a dependency and license summary.
