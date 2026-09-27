@@ -1,60 +1,36 @@
-# Alpha 1.2
+# Alpha 1.3
 
-An early alpha release. The changes below build on Alpha 1.1.
+An early alpha release. The changes below build on Alpha 1.2.
 
-## VR controllers
+## Camera
 
-- The VR controllers act as the Wii U GamePad. The layer publishes both
-  controllers, and the game profile writes them into the pad state before the
-  game reads it. Cemu's input configuration is not involved at any point.
-- Buttons:
-  - left hand: X to X, Y to Y, trigger to ZL, grip to L, menu to Plus,
-    stick click to Minus
-  - right hand: A to A, B to X (run), trigger to B, grip to R
-  - left stick moves, right stick looks
-- D-pad: hold the left controller close to your head. While it is there the
-  right stick acts as the D-pad and stops turning the view. A short pulse in
-  that controller confirms the gesture has engaged.
-- Pad and controllers work at the same time, button by button. A controller
-  stick at rest leaves the pad's own value alone.
-- B on the right hand is the run button rather than a second jump, so that
-  running does not need the hand that is already pushing the stick.
+- A third view, the close diorama: the diorama from half its distance, with
+  the same direction, head tracking and scale. The mode switch now steps from
+  the diorama to the close diorama, then to first person, then back; every
+  step resets camera turning and recentres head position, as before. Like
+  first person, the close diorama applies in levels; intro and world map keep
+  the diorama.
 
-## Switching between diorama and first person
+## Lighting
 
-- The button is selectable in Cemu's settings for the graphic pack: right
-  stick click (default), left stick click, either of the two, ZL and ZR
-  together, L and R together, or Minus.
-- The right controller's stick click switches as well.
+- The known eye-dependent lighting mismatch is fixed. Since the first alpha a light could sit
+  on the left wall in the left eye and on the right wall in the right eye,
+  most visibly in small enclosed stages. The game's screen-space passes - the
+  light pre-pass, glare, depth of field and indirect light - read the camera
+  and the projection from the renderer's view data, which still held the
+  game's own symmetric projection while each eye had been drawn with its own
+  frustum. The VR graphic pack now hands those passes the eye's camera and
+  projection as well, and puts the game's own back before the game's logic
+  runs. Shadows are unchanged.
 
-## View
+## Start-up
 
-- First person keeps the horizon level. The view no longer inherits the game
-  camera's tilt, so walking up a staircase no longer tips it forward.
-- The extra visibility test now uses the same camera and the same prepared
-  pose as the picture. Objects no longer appear only after a mode switch.
-- The near clip plane in first person moved from about 67 to about 7
-  centimetres. Standing against a wall no longer cuts a strip out of it.
-- The player model is hidden in first person.
-
-## Image
-
-- The game's depth of field is off.
-- Its flare filter is off - the coloured smears that lay over the whole
-  picture.
-- Its god rays are off.
-
-These effects are disabled to reduce blur and visual artifacts in VR.
-
-## What the controllers need from Cemu
-
-Nothing has to be mapped. The controller state comes from OpenXR through the
-VR layer and is written into the pad the game reads, so no button and no stick
-needs an assignment in Cemu's input settings.
-
-One thing does matter: emulated controller 1 has to be a **Wii U GamePad**.
-The game asks for a GamePad and for the other controller types through
-different paths, and only the GamePad path carries the controllers.
+- The VR layer initialises OpenXR in two phases: the runtime, the headset and
+  the view configuration are prepared at the first frame Cemu presents, and
+  the session, the swapchains and the image transport follow as soon as the
+  first complete stereo pair reports its size and format. Cemu rebuilding its
+  own swapchain at start no longer tears the OpenXR session down, and a
+  runtime that is not ready yet is retried instead of failing the start.
 
 ## Compatibility
 

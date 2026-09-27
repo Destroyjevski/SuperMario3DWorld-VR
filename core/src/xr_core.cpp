@@ -27,7 +27,42 @@ const char* xrResultName(XrInstance inst, XrResult r) {
         XrResult _r = (expr);                                                        \
         if (XR_FAILED(_r)) {                                                         \
             CVR_ERR("xr.call", "op=%s result=%s", what, xrResultName(inst, _r));      \
+            m_lastResult = _r;                                              \
             return false;                                                            \
+        }                                                                            \
+    } while (0)
+
+// Was von selbst heilt, und was nicht. Transient: die Laufzeit oder das
+// Headset sind gerade nicht da -- der naechste Versuch kann gelingen. Alles
+// andere ist ein Widerspruch zwischen diesem Kern und der Laufzeit.
+bool xrTransient(XrResult r) {
+    switch (r) {
+        case XR_ERROR_RUNTIME_UNAVAILABLE:
+        case XR_ERROR_RUNTIME_FAILURE:
+        case XR_ERROR_INITIALIZATION_FAILED:
+        case XR_ERROR_FORM_FACTOR_UNAVAILABLE:
+        case XR_ERROR_INSTANCE_LOST:
+        case XR_ERROR_SESSION_LOST:
+        case XR_TIMEOUT_EXPIRED:
+            return true;
+        default:
+            return false;
+    }
+}
+XrOutcome xrOutcomeOf(XrResult r) {
+    return XR_SUCCEEDED(r) ? XrOutcome::Ok : xrTransient(r) ? XrOutcome::Transient : XrOutcome::Fatal;
+}
+
+// Wie XR_CHECK, nur dass der Aufbau den Ausgang unterscheidet: Transient
+// oder Fatal statt bloss falsch.
+#define XR_STEP(inst, expr, what)                                                    \
+    do {                                                                             \
+        XrResult _r = (expr);                                                        \
+        if (XR_FAILED(_r)) {                                                         \
+            CVR_ERR("xr.call", "op=%s result=%s transient=%d", what,                 \
+                    xrResultName(inst, _r), (int)xrTransient(_r));                   \
+            m_lastResult = _r;                                              \
+            return xrOutcomeOf(_r);                                                  \
         }                                                                            \
     } while (0)
 
@@ -97,171 +132,240 @@ CemuVR_Mat4 makeView(const XrPosef& pose, float worldScale) {
 
 XrCore::~XrCore() { shutdown(); }
 
-bool XrCore::initialise(const XrCoreConfig& cfg) {
+XrOutcome XrCore::prepare(const XrCoreConfig& cfg) {
+    if (m_state == XrState::Failed) return XrOutcome::Fatal;
+    if (prepared()) return XrOutcome::Ok;
+    if (m_state != XrState::Uninitialised && m_state != XrState::Unavailable &&
+        m_state != XrState::InstanceReady && m_state != XrState::Ended) {
+        CVR_ERR("openxr.phase1", "reason=wrong_state state=%d", (int)m_state);
+        return XrOutcome::Fatal;
+    }
     m_cfg = cfg;
+    m_lastResult = XR_SUCCESS;
+    CVR_INFO("openxr.phase1", "begin instance=%d", (int)(m_instance != XR_NULL_HANDLE));
 
-    // 1. Runtime-Erkennung ueber die verfuegbaren Erweiterungen.
-    uint32_t extCount = 0;
-    XR_CHECK(XR_NULL_HANDLE, xrEnumerateInstanceExtensionProperties(nullptr, 0, &extCount, nullptr),
-             "xrEnumerateInstanceExtensionProperties(count)");
-    std::vector<XrExtensionProperties> exts(extCount, {XR_TYPE_EXTENSION_PROPERTIES});
-    XR_CHECK(XR_NULL_HANDLE,
-             xrEnumerateInstanceExtensionProperties(nullptr, extCount, &extCount, exts.data()),
-             "xrEnumerateInstanceExtensionProperties");
-
-    bool haveD3D11 = false;
-    bool haveVk1 = false, haveVk2 = false;
-    for (const auto& e : exts) {
-        CVR_TRACE("xr.ext", "name=%s version=%u", e.extensionName, e.extensionVersion);
-        if (std::strcmp(e.extensionName, XR_KHR_D3D11_ENABLE_EXTENSION_NAME) == 0) haveD3D11 = true;
-        if (std::strcmp(e.extensionName, "XR_KHR_vulkan_enable")  == 0) haveVk1 = true;
-        if (std::strcmp(e.extensionName, "XR_KHR_vulkan_enable2") == 0) haveVk2 = true;
-    }
-    m_runtimeVulkan = haveVk1 || haveVk2;
-    CVR_INFO("xr.ext.count", "n=%u d3d11=%d vulkan_enable=%d vulkan_enable2=%d",
-             extCount, (int)haveD3D11, (int)haveVk1, (int)haveVk2);
-    // Die Pfadentscheidung wird bei JEDEM Lauf protokolliert, nicht nur einmal
-    // im Dokument -- so steht im Beleg, welcher Pfad tatsaechlich moeglich war.
-    CVR_INFO("path.decision",
-             "chosen=B_d3d11_interop pathA_available=%d reason=%s",
-             (int)m_runtimeVulkan,
-             m_runtimeVulkan ? "runtime_offers_vulkan_but_core_is_d3d11"
-                             : "runtime_offers_no_vulkan_binding");
-
-    if (!haveD3D11) {
-        CVR_ERR("xr.init", "reason=missing_extension name=%s", XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
-        m_state = XrState::Failed;
-        return false;
-    }
-
-    const char* enabled[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME };
-
-    XrInstanceCreateInfo ici{XR_TYPE_INSTANCE_CREATE_INFO};
-    std::snprintf(ici.applicationInfo.applicationName,
-                  sizeof(ici.applicationInfo.applicationName), "%s", m_cfg.appName.c_str());
-    std::snprintf(ici.applicationInfo.engineName,
-                  sizeof(ici.applicationInfo.engineName), "%s", m_cfg.engineName.c_str());
-    ici.applicationInfo.applicationVersion = 1;
-    ici.applicationInfo.engineVersion = 1;
-    ici.enabledExtensionCount = 1;
-    ici.enabledExtensionNames = enabled;
-
-    // Die Fassung wird AUSGEHANDELT, nicht festgeschrieben.
-    //
-    // Frueher stand hier fest XR_CURRENT_API_VERSION -- also die Fassung der
-    // Kopfdatei, gegen die dieser Kern gebaut wurde. Nicht jede Laufzeit
-    // spricht sie: VirtualDesktopXR 1.0.10 lehnt 1.1 mit
-    // XR_ERROR_API_VERSION_UNSUPPORTED ab. Der Kern brach dann vor der
-    // Instanzerzeugung ab, baute die VR-Ausgabe sofort wieder ab und band nie
-    // ein Spielprofil an -- es kam kein Bild im Headset an, waehrend Cemu
-    // aeusserlich normal weiterlief.
-    //
-    // Gemessen mit tools\xr_versionsprobe.cpp:
-    //
-    //   Fassung   VirtualDesktopXR 1.0.10      FakeHMD 0.1.0
-    //   1.1.62    API_VERSION_UNSUPPORTED      OK
-    //   1.1.0     API_VERSION_UNSUPPORTED      OK
-    //   1.0.62    OK, Headset gefunden         OK
-    //   1.0.34    OK, Headset gefunden         OK
-    //   1.0.0     OK, Headset gefunden         OK
-    //
-    // Mit und ohne XR_KHR_D3D11_enable dasselbe Bild; an der Erweiterung liegt
-    // es also nicht. Ein Simulator kann diese Eigenschaft prinzipbedingt nicht
-    // beurteilen -- sie haengt an der fremden Laufzeit, nicht am Kern.
-    //
-    // Drei Eigenschaften dieses Wegs sind Absicht:
-    //   * der ERSTE Versuch ist unveraendert XR_CURRENT_API_VERSION. Eine
-    //     Laufzeit, die das heute annimmt, bekommt weiterhin genau das;
-    //   * heruntergegangen wird NUR bei XR_ERROR_API_VERSION_UNSUPPORTED.
-    //     Jeder andere Fehler bricht sofort ab und bleibt sichtbar, statt
-    //     hinter stillen Wiederholungen zu verschwinden;
-    //   * jeder Versuch wird protokolliert. Im Beleg steht danach, welche
-    //     Fassung die Laufzeit tatsaechlich angenommen hat.
-    static const XrVersion kApiVersionen[] = {
-        XR_CURRENT_API_VERSION,
-        XR_MAKE_VERSION(1, 0, XR_VERSION_PATCH(XR_CURRENT_API_VERSION)),
-        XR_MAKE_VERSION(1, 0, 0),
+    // Ein Fehlschlag in dieser Phase: transient heisst Unavailable und
+    // spaeter noch einmal, fatal heisst Failed und aus. Was schon steht --
+    // eine Instanz ohne System -- bleibt fuer den naechsten Versuch stehen.
+    // Ausnahme: eine verlorene Instanz. Die wird nicht behalten und nicht
+    // noch einmal befragt, sondern abgebaut; der naechste Versuch legt eine
+    // neue an.
+    auto fail = [&](XrResult r, const char* what) {
+        m_lastResult = r;
+        if (r == XR_ERROR_INSTANCE_LOST) {
+            CVR_WARN("openxr.phase1", "instance_lost=1 op=%s -- Instanz wird abgebaut, Phase 1 beginnt neu", what);
+            loseInstance(what);
+            return XrOutcome::Transient;
+        }
+        const XrOutcome o = xrOutcomeOf(r);
+        if (o == XrOutcome::Transient) {
+            CVR_WARN("openxr.phase1", "unavailable=1 op=%s result=%s -- wird erneut versucht",
+                     what, xrResultName(m_instance, r));
+            m_state = XrState::Unavailable;
+        } else {
+            CVR_ERR("openxr.phase1", "failed=1 op=%s result=%s", what, xrResultName(m_instance, r));
+            m_state = XrState::Failed;
+        }
+        return o;
     };
-    XrResult instRes = XR_ERROR_API_VERSION_UNSUPPORTED;
-    XrVersion apiGenommen = 0;
-    bool ersterVersuch = true;
-    for (XrVersion v : kApiVersionen) {
-        // Bei Patchstand 0 fallen die letzten beiden Eintraege zusammen.
-        if (!ersterVersuch && v == apiGenommen) continue;
-        ersterVersuch = false;
-        ici.applicationInfo.apiVersion = v;
-        instRes = xrCreateInstance(&ici, &m_instance);
-        apiGenommen = v;
-        CVR_INFO("xr.apiversion", "versucht=%llu.%llu.%llu result=%s",
-                 (unsigned long long)XR_VERSION_MAJOR(v),
-                 (unsigned long long)XR_VERSION_MINOR(v),
-                 (unsigned long long)XR_VERSION_PATCH(v),
-                 xrResultName(XR_NULL_HANDLE, instRes));
-        if (instRes != XR_ERROR_API_VERSION_UNSUPPORTED) break;
+
+    if (m_instance == XR_NULL_HANDLE) {
+        // 1. Runtime-Erkennung ueber die verfuegbaren Erweiterungen.
+        uint32_t extCount = 0;
+        XrResult er = xrEnumerateInstanceExtensionProperties(nullptr, 0, &extCount, nullptr);
+        if (XR_FAILED(er)) return fail(er, "xrEnumerateInstanceExtensionProperties(count)");
+        std::vector<XrExtensionProperties> exts(extCount, {XR_TYPE_EXTENSION_PROPERTIES});
+        er = xrEnumerateInstanceExtensionProperties(nullptr, extCount, &extCount, exts.data());
+        if (XR_FAILED(er)) return fail(er, "xrEnumerateInstanceExtensionProperties");
+
+        bool haveD3D11 = false;
+        bool haveVk1 = false, haveVk2 = false;
+        for (const auto& e : exts) {
+            CVR_TRACE("xr.ext", "name=%s version=%u", e.extensionName, e.extensionVersion);
+            if (std::strcmp(e.extensionName, XR_KHR_D3D11_ENABLE_EXTENSION_NAME) == 0) haveD3D11 = true;
+            if (std::strcmp(e.extensionName, "XR_KHR_vulkan_enable")  == 0) haveVk1 = true;
+            if (std::strcmp(e.extensionName, "XR_KHR_vulkan_enable2") == 0) haveVk2 = true;
+        }
+        m_runtimeVulkan = haveVk1 || haveVk2;
+        CVR_INFO("xr.ext.count", "n=%u d3d11=%d vulkan_enable=%d vulkan_enable2=%d",
+                 extCount, (int)haveD3D11, (int)haveVk1, (int)haveVk2);
+        // Die Pfadentscheidung wird bei JEDEM Lauf protokolliert, nicht nur einmal
+        // im Dokument -- so steht im Beleg, welcher Pfad tatsaechlich moeglich war.
+        CVR_INFO("path.decision",
+                 "chosen=B_d3d11_interop pathA_available=%d reason=%s",
+                 (int)m_runtimeVulkan,
+                 m_runtimeVulkan ? "runtime_offers_vulkan_but_core_is_d3d11"
+                                 : "runtime_offers_no_vulkan_binding");
+
+        if (!haveD3D11) {
+            CVR_ERR("xr.init", "reason=missing_extension name=%s", XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
+            m_state = XrState::Failed;
+            return XrOutcome::Fatal;
+        }
+
+        const char* enabled[] = { XR_KHR_D3D11_ENABLE_EXTENSION_NAME };
+
+        XrInstanceCreateInfo ici{XR_TYPE_INSTANCE_CREATE_INFO};
+        std::snprintf(ici.applicationInfo.applicationName,
+                      sizeof(ici.applicationInfo.applicationName), "%s", m_cfg.appName.c_str());
+        std::snprintf(ici.applicationInfo.engineName,
+                      sizeof(ici.applicationInfo.engineName), "%s", m_cfg.engineName.c_str());
+        ici.applicationInfo.applicationVersion = 1;
+        ici.applicationInfo.engineVersion = 1;
+        ici.enabledExtensionCount = 1;
+        ici.enabledExtensionNames = enabled;
+
+        // Die Fassung wird AUSGEHANDELT, nicht festgeschrieben.
+        //
+        // Frueher stand hier fest XR_CURRENT_API_VERSION -- also die Fassung der
+        // Kopfdatei, gegen die dieser Kern gebaut wurde. Nicht jede Laufzeit
+        // spricht sie: VirtualDesktopXR 1.0.10 lehnt 1.1 mit
+        // XR_ERROR_API_VERSION_UNSUPPORTED ab. Der Kern brach dann vor der
+        // Instanzerzeugung ab, baute die VR-Ausgabe sofort wieder ab und band nie
+        // ein Spielprofil an -- es kam kein Bild im Headset an, waehrend Cemu
+        // aeusserlich normal weiterlief.
+        //
+        // Gemessen mit tools\xr_versionsprobe.cpp:
+        //
+        //   Fassung   VirtualDesktopXR 1.0.10      FakeHMD 0.1.0
+        //   1.1.62    API_VERSION_UNSUPPORTED      OK
+        //   1.1.0     API_VERSION_UNSUPPORTED      OK
+        //   1.0.62    OK, Headset gefunden         OK
+        //   1.0.34    OK, Headset gefunden         OK
+        //   1.0.0     OK, Headset gefunden         OK
+        //
+        // Drei Eigenschaften dieses Wegs sind Absicht:
+        //   * der ERSTE Versuch ist unveraendert XR_CURRENT_API_VERSION;
+        //   * heruntergegangen wird NUR bei XR_ERROR_API_VERSION_UNSUPPORTED.
+        //     Jeder andere Fehler bricht ab und bleibt sichtbar;
+        //   * jeder Versuch wird protokolliert.
+        static const XrVersion kApiVersionen[] = {
+            XR_CURRENT_API_VERSION,
+            XR_MAKE_VERSION(1, 0, XR_VERSION_PATCH(XR_CURRENT_API_VERSION)),
+            XR_MAKE_VERSION(1, 0, 0),
+        };
+        XrResult instRes = XR_ERROR_API_VERSION_UNSUPPORTED;
+        XrVersion apiGenommen = 0;
+        bool ersterVersuch = true;
+        for (XrVersion v : kApiVersionen) {
+            // Bei Patchstand 0 fallen die letzten beiden Eintraege zusammen.
+            if (!ersterVersuch && v == apiGenommen) continue;
+            ersterVersuch = false;
+            ici.applicationInfo.apiVersion = v;
+            instRes = xrCreateInstance(&ici, &m_instance);
+            apiGenommen = v;
+            CVR_INFO("xr.apiversion", "versucht=%llu.%llu.%llu result=%s",
+                     (unsigned long long)XR_VERSION_MAJOR(v),
+                     (unsigned long long)XR_VERSION_MINOR(v),
+                     (unsigned long long)XR_VERSION_PATCH(v),
+                     xrResultName(XR_NULL_HANDLE, instRes));
+            if (instRes != XR_ERROR_API_VERSION_UNSUPPORTED) break;
+        }
+        if (XR_FAILED(instRes)) {
+            m_instance = XR_NULL_HANDLE;
+            return fail(instRes, "xrCreateInstance");
+        }
+        CVR_INFO("xr.apiversion", "genommen=%llu.%llu.%llu",
+                 (unsigned long long)XR_VERSION_MAJOR(apiGenommen),
+                 (unsigned long long)XR_VERSION_MINOR(apiGenommen),
+                 (unsigned long long)XR_VERSION_PATCH(apiGenommen));
+
+        XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
+        if (XR_SUCCEEDED(xrGetInstanceProperties(m_instance, &ip))) {
+            m_runtimeName = ip.runtimeName;
+            CVR_INFO("xr.runtime", "name=\"%s\" version=%llu.%llu.%llu",
+                     ip.runtimeName,
+                     (unsigned long long)XR_VERSION_MAJOR(ip.runtimeVersion),
+                     (unsigned long long)XR_VERSION_MINOR(ip.runtimeVersion),
+                     (unsigned long long)XR_VERSION_PATCH(ip.runtimeVersion));
+            CVR_INFO("openxr.runtime", "name=\"%s\" version=%llu.%llu.%llu",
+                     ip.runtimeName,
+                     (unsigned long long)XR_VERSION_MAJOR(ip.runtimeVersion),
+                     (unsigned long long)XR_VERSION_MINOR(ip.runtimeVersion),
+                     (unsigned long long)XR_VERSION_PATCH(ip.runtimeVersion));
+        }
+        m_state = XrState::InstanceReady;
     }
-    XR_CHECK(XR_NULL_HANDLE, instRes, "xrCreateInstance");
-    CVR_INFO("xr.apiversion", "genommen=%llu.%llu.%llu",
-             (unsigned long long)XR_VERSION_MAJOR(apiGenommen),
-             (unsigned long long)XR_VERSION_MINOR(apiGenommen),
-             (unsigned long long)XR_VERSION_PATCH(apiGenommen));
 
-    XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
-    if (XR_SUCCEEDED(xrGetInstanceProperties(m_instance, &ip))) {
-        m_runtimeName = ip.runtimeName;
-        CVR_INFO("xr.runtime", "name=\"%s\" version=%llu.%llu.%llu",
-                 ip.runtimeName,
-                 (unsigned long long)XR_VERSION_MAJOR(ip.runtimeVersion),
-                 (unsigned long long)XR_VERSION_MINOR(ip.runtimeVersion),
-                 (unsigned long long)XR_VERSION_PATCH(ip.runtimeVersion));
+    if (m_systemId == XR_NULL_SYSTEM_ID) {
+        // Das Headset. XR_ERROR_FORM_FACTOR_UNAVAILABLE ist laut Spezifikation
+        // genau der Fall "spaeter vielleicht": Brille noch nicht auf, Runtime
+        // noch am Aufwachen. Das ist kein Grund, die Instanz wegzuwerfen.
+        XrSystemGetInfo sgi{XR_TYPE_SYSTEM_GET_INFO};
+        sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+        const XrResult sr = xrGetSystem(m_instance, &sgi, &m_systemId);
+        if (XR_FAILED(sr)) {
+            m_systemId = XR_NULL_SYSTEM_ID;
+            return fail(sr, "xrGetSystem");
+        }
+        XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};
+        if (XR_SUCCEEDED(xrGetSystemProperties(m_instance, m_systemId, &sp))) {
+            m_systemName = sp.systemName;
+            CVR_INFO("xr.system", "name=\"%s\" vendor=%u maxW=%u maxH=%u layers=%u orient=%d pos=%d",
+                     sp.systemName, sp.vendorId,
+                     sp.graphicsProperties.maxSwapchainImageWidth,
+                     sp.graphicsProperties.maxSwapchainImageHeight,
+                     sp.graphicsProperties.maxLayerCount,
+                     (int)sp.trackingProperties.orientationTracking,
+                     (int)sp.trackingProperties.positionTracking);
+            CVR_INFO("openxr.system", "name=\"%s\" vendor=%u", sp.systemName, sp.vendorId);
+        }
     }
 
-    XrSystemGetInfo sgi{XR_TYPE_SYSTEM_GET_INFO};
-    sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
-    XR_CHECK(m_instance, xrGetSystem(m_instance, &sgi, &m_systemId), "xrGetSystem");
-
-    XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};
-    if (XR_SUCCEEDED(xrGetSystemProperties(m_instance, m_systemId, &sp))) {
-        CVR_INFO("xr.system", "name=\"%s\" vendor=%u maxW=%u maxH=%u layers=%u orient=%d pos=%d",
-                 sp.systemName, sp.vendorId,
-                 sp.graphicsProperties.maxSwapchainImageWidth,
-                 sp.graphicsProperties.maxSwapchainImageHeight,
-                 sp.graphicsProperties.maxLayerCount,
-                 (int)sp.trackingProperties.orientationTracking,
-                 (int)sp.trackingProperties.positionTracking);
-    }
-
-    // View-Konfiguration
+    // Sichtkonfiguration. Die empfohlene Groesse ist AUSKUNFT: die Groesse
+    // der Swapchains kommt in Phase 2 aus dem Stereo-Paar, nie von hier.
     uint32_t viewCount = 0;
-    XR_CHECK(m_instance,
-             xrEnumerateViewConfigurationViews(m_instance, m_systemId,
-                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &viewCount, nullptr),
-             "xrEnumerateViewConfigurationViews(count)");
+    XrResult vr = xrEnumerateViewConfigurationViews(m_instance, m_systemId,
+                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &viewCount, nullptr);
+    if (XR_FAILED(vr)) return fail(vr, "xrEnumerateViewConfigurationViews(count)");
     if (viewCount != 2) {
         CVR_ERR("xr.viewconfig", "reason=unexpected_view_count n=%u", viewCount);
         m_state = XrState::Failed;
-        return false;
+        return XrOutcome::Fatal;
     }
     std::vector<XrViewConfigurationView> vcv(viewCount, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
-    XR_CHECK(m_instance,
-             xrEnumerateViewConfigurationViews(m_instance, m_systemId,
-                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewCount, &viewCount, vcv.data()),
-             "xrEnumerateViewConfigurationViews");
+    vr = xrEnumerateViewConfigurationViews(m_instance, m_systemId,
+                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewCount, &viewCount, vcv.data());
+    if (XR_FAILED(vr)) return fail(vr, "xrEnumerateViewConfigurationViews");
+    m_recommendedW = vcv[0].recommendedImageRectWidth;
+    m_recommendedH = vcv[0].recommendedImageRectHeight;
+    CVR_INFO("xr.viewconfig", "views=%u recW=%u recH=%u samples=%u",
+             viewCount, m_recommendedW, m_recommendedH, vcv[0].recommendedSwapchainSampleCount);
+    CVR_INFO("openxr.viewconfig", "recommended=%ux%u -- nur Auskunft; die Bildgroesse kommt vom Stereo-Paar",
+             m_recommendedW, m_recommendedH);
 
-    m_eyeWidth  = m_cfg.eyeWidth  ? m_cfg.eyeWidth  : vcv[0].recommendedImageRectWidth;
-    m_eyeHeight = m_cfg.eyeHeight ? m_cfg.eyeHeight : vcv[0].recommendedImageRectHeight;
-    CVR_INFO("xr.viewconfig", "views=%u recW=%u recH=%u useW=%u useH=%u samples=%u",
-             viewCount, vcv[0].recommendedImageRectWidth, vcv[0].recommendedImageRectHeight,
-             m_eyeWidth, m_eyeHeight, vcv[0].recommendedSwapchainSampleCount);
+    for (auto& v : m_views) v = {XR_TYPE_VIEW};
+    m_state = XrState::SystemReady;
+    CVR_INFO("openxr.phase1", "ready=1 runtime=\"%s\" system=\"%s\"",
+             m_runtimeName.c_str(), m_systemName.c_str());
+    return XrOutcome::Ok;
+}
+
+XrOutcome XrCore::attach(uint32_t eyeWidth, uint32_t eyeHeight,
+                         DXGI_FORMAT preferredFormat, ID3D11Device* device) {
+    if (m_state == XrState::Failed) return XrOutcome::Fatal;
+    if (attached()) return XrOutcome::Ok;
+    if (m_state != XrState::SystemReady) {
+        CVR_ERR("openxr.phase2", "reason=phase1_not_ready state=%d", (int)m_state);
+        return XrOutcome::Fatal;
+    }
+    if (!eyeWidth || !eyeHeight) {
+        CVR_ERR("openxr.phase2",
+                "reason=no_source_size -- die Groesse kommt vom Stereo-Paar, nicht von der Runtime");
+        return XrOutcome::Fatal;
+    }
+    m_eyeWidth = eyeWidth;
+    m_eyeHeight = eyeHeight;
+    m_cfg.preferredFormat = preferredFormat;
+    m_lastResult = XR_SUCCESS;
+    CVR_INFO("openxr.phase2", "begin size=%ux%u preferredFormat=%u (Runtime empfiehlt %ux%u -- nicht benutzt)",
+             m_eyeWidth, m_eyeHeight, (unsigned)preferredFormat, m_recommendedW, m_recommendedH);
     // Was das fuer die Schaerfe bedeutet, ausdruecklich und nicht zum
-    // Ausrechnen: die Augenbildgroesse ist Cemus Fenstergroesse, das Auge der
-    // Brille ist aber fast quadratisch. Was fehlt, wird gestreckt -- und
-    // gestreckte Zeilen sind genau das, was als grobe Aufloesung auffaellt.
-    if (m_eyeWidth && m_eyeHeight &&
-        vcv[0].recommendedImageRectWidth && vcv[0].recommendedImageRectHeight) {
-        const float sw = 100.0f * (float)vcv[0].recommendedImageRectWidth
-                       / (float)m_eyeWidth;
-        const float sh = 100.0f * (float)vcv[0].recommendedImageRectHeight
-                       / (float)m_eyeHeight;
+    // Ausrechnen: die Augenbildgroesse ist die des Gastbildes, das Auge der
+    // Brille ist aber fast quadratisch. Was fehlt, wird gestreckt.
+    if (m_recommendedW && m_recommendedH) {
+        const float sw = 100.0f * (float)m_recommendedW / (float)m_eyeWidth;
+        const float sh = 100.0f * (float)m_recommendedH / (float)m_eyeHeight;
         CVR_INFO("xr.aufloesung",
                  "Streckung waagerecht %.0f%% senkrecht %.0f%% -- %s",
                  sw, sh,
@@ -270,27 +374,36 @@ bool XrCore::initialise(const XrCoreConfig& cfg) {
                        "braeuchte ein hoeher aufloesendes Quellbild"
                      : "im Rahmen");
     }
-
-    for (auto& v : m_views) v = {XR_TYPE_VIEW};
-    m_state = XrState::InstanceReady;
-    return true;
+    const XrOutcome o = attachSteps(device);
+    if (o != XrOutcome::Ok) {
+        if (m_lastResult == XR_ERROR_INSTANCE_LOST) {
+            // Nicht nur Phase 2 weg: die Instanz ist verloren, also alles.
+            CVR_WARN("openxr.phase2", "instance_lost=1 -- Instanz wird abgebaut, Phase 1 beginnt neu");
+            loseInstance("phase2");
+            return XrOutcome::Transient;
+        }
+        // Was halb steht, kommt weg; Phase 1 bleibt fuer den naechsten Versuch.
+        detach();
+        if (o == XrOutcome::Fatal) m_state = XrState::Failed;
+        CVR_ERR("openxr.phase2", "ready=0 outcome=%s", o == XrOutcome::Fatal ? "fatal" : "transient");
+        return o;
+    }
+    m_state = XrState::SessionCreated;
+    CVR_INFO("openxr.phase2", "ready=1 session=1 swapchains=%ux%u format=%u",
+             m_eyeWidth, m_eyeHeight, (unsigned)m_format);
+    return XrOutcome::Ok;
 }
 
-bool XrCore::createSession(ID3D11Device* device) {
-    if (m_state != XrState::InstanceReady) {
-        CVR_ERR("xr.session", "reason=wrong_state state=%d", (int)m_state);
-        return false;
-    }
-
+XrOutcome XrCore::attachSteps(ID3D11Device* device) {
     auto pfnGetReq = (PFN_xrGetD3D11GraphicsRequirementsKHR)nullptr;
-    XR_CHECK(m_instance,
-             xrGetInstanceProcAddr(m_instance, "xrGetD3D11GraphicsRequirementsKHR",
-                                   (PFN_xrVoidFunction*)&pfnGetReq),
-             "xrGetInstanceProcAddr(xrGetD3D11GraphicsRequirementsKHR)");
+    XR_STEP(m_instance,
+            xrGetInstanceProcAddr(m_instance, "xrGetD3D11GraphicsRequirementsKHR",
+                                  (PFN_xrVoidFunction*)&pfnGetReq),
+            "xrGetInstanceProcAddr(xrGetD3D11GraphicsRequirementsKHR)");
 
     XrGraphicsRequirementsD3D11KHR req{XR_TYPE_GRAPHICS_REQUIREMENTS_D3D11_KHR};
-    XR_CHECK(m_instance, pfnGetReq(m_instance, m_systemId, &req),
-             "xrGetD3D11GraphicsRequirementsKHR");
+    XR_STEP(m_instance, pfnGetReq(m_instance, m_systemId, &req),
+            "xrGetD3D11GraphicsRequirementsKHR");
     CVR_INFO("xr.gfxreq", "adapterLuid=%08lx:%08lx minFeatureLevel=0x%x",
              (unsigned long)req.adapterLuid.HighPart, (unsigned long)req.adapterLuid.LowPart,
              (unsigned)req.minFeatureLevel);
@@ -304,7 +417,7 @@ bool XrCore::createSession(ID3D11Device* device) {
         IDXGIFactory1* factory = nullptr;
         if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&factory))) {
             CVR_ERR("d3d11.init", "reason=CreateDXGIFactory1_failed");
-            return false;
+            return XrOutcome::Fatal;
         }
         IDXGIAdapter1* chosen = nullptr;
         for (UINT i = 0; ; ++i) {
@@ -333,7 +446,7 @@ bool XrCore::createSession(ID3D11Device* device) {
         factory->Release();
         if (FAILED(hr)) {
             CVR_ERR("d3d11.init", "reason=D3D11CreateDevice_failed hr=0x%08lx", (unsigned long)hr);
-            return false;
+            return XrOutcome::Fatal;
         }
         m_ownDevice = true;
         CVR_INFO("d3d11.init", "featureLevel=0x%x own=1", (unsigned)got);
@@ -346,8 +459,9 @@ bool XrCore::createSession(ID3D11Device* device) {
     XrSessionCreateInfo sci{XR_TYPE_SESSION_CREATE_INFO};
     sci.next = &binding;
     sci.systemId = m_systemId;
-    XR_CHECK(m_instance, xrCreateSession(m_instance, &sci, &m_session), "xrCreateSession");
+    XR_STEP(m_instance, xrCreateSession(m_instance, &sci, &m_session), "xrCreateSession");
     CVR_INFO("xr.session", "created=1");
+    CVR_INFO("openxr.session", "created=1");
 
     XrReferenceSpaceCreateInfo rs{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     rs.poseInReferenceSpace.orientation.w = 1.0f;
@@ -355,14 +469,14 @@ bool XrCore::createSession(ID3D11Device* device) {
     if (XR_FAILED(xrCreateReferenceSpace(m_session, &rs, &m_stageSpace))) {
         CVR_WARN("xr.space", "stage=unavailable fallback=local");
         rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-        XR_CHECK(m_instance, xrCreateReferenceSpace(m_session, &rs, &m_stageSpace),
-                 "xrCreateReferenceSpace(LOCAL)");
+        XR_STEP(m_instance, xrCreateReferenceSpace(m_session, &rs, &m_stageSpace),
+                "xrCreateReferenceSpace(LOCAL)");
     }
     m_stageSpaceType=rs.referenceSpaceType;
     m_stageSpaceOffset=rs.poseInReferenceSpace;
     rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
-    XR_CHECK(m_instance, xrCreateReferenceSpace(m_session, &rs, &m_viewSpace),
-             "xrCreateReferenceSpace(VIEW)");
+    XR_STEP(m_instance, xrCreateReferenceSpace(m_session, &rs, &m_viewSpace),
+            "xrCreateReferenceSpace(VIEW)");
     CVR_INFO("xr.space", "stage=1 view=1");
 
     // Die Controller sind eine Zugabe, keine Bedingung. Ohne sie lief der Mod
@@ -370,10 +484,10 @@ bool XrCore::createSession(ID3D11Device* device) {
     if (!createActions())
         CVR_WARN("xr.action", "ready=0 falling_back_to_pad_only=1");
 
-    if (!createSwapchains()) return false;
-
-    m_state = XrState::SessionCreated;
-    return true;
+    // Die Swapchains: genau die Quellgroesse, kein Bit skaliert.
+    if (!createSwapchains()) return XrOutcome::Fatal;
+    CVR_INFO("openxr.swapchains", "size=%ux%u format=%u", m_eyeWidth, m_eyeHeight, (unsigned)m_format);
+    return XrOutcome::Ok;
 }
 
 bool XrCore::createSwapchains() {
@@ -444,7 +558,7 @@ bool XrCore::createSwapchains() {
     return true;
 }
 
-void XrCore::shutdown() {
+void XrCore::detach() {
     m_sessionAnchor.reset();m_spaceChanges.clear();
     m_validFrames=0;m_trackedFrames=0;
     if (m_session != XR_NULL_HANDLE) {
@@ -454,6 +568,9 @@ void XrCore::shutdown() {
             xrEndSession(m_session);
         }
     }
+    m_frameActive = false;
+    m_viewsValid = false;
+    m_eyeReady = {{false, false}};
     for (auto& c : m_chains) {
         if (c.handle != XR_NULL_HANDLE) { xrDestroySwapchain(c.handle); c.handle = XR_NULL_HANDLE; }
         c.images.clear();
@@ -466,7 +583,6 @@ void XrCore::shutdown() {
     if (m_viewSpace  != XR_NULL_HANDLE) { xrDestroySpace(m_viewSpace);  m_viewSpace  = XR_NULL_HANDLE; }
     if (m_stageSpace != XR_NULL_HANDLE) { xrDestroySpace(m_stageSpace); m_stageSpace = XR_NULL_HANDLE; }
     if (m_session    != XR_NULL_HANDLE) { xrDestroySession(m_session);  m_session    = XR_NULL_HANDLE; }
-    if (m_instance   != XR_NULL_HANDLE) { xrDestroyInstance(m_instance); m_instance  = XR_NULL_HANDLE; }
     if (m_cfg.bildLageMessen) lageProbenErnten(true);
     for (auto& pr : m_lage) {
         if (pr.staging) { pr.staging->Release(); pr.staging = nullptr; }
@@ -475,8 +591,49 @@ void XrCore::shutdown() {
     if (m_staging) { m_staging->Release(); m_staging = nullptr; }
     if (m_ctx)    { m_ctx->Release();    m_ctx = nullptr; }
     if (m_device) { m_device->Release(); m_device = nullptr; }
+    // Phase 1 bleibt stehen: mit System ist der Kern wieder bereit fuer ein
+    // neues Anbinden, mit blosser Instanz muss das System noch einmal her.
+    if (m_state != XrState::Failed && m_state != XrState::Ended)
+        m_state = m_systemId != XR_NULL_SYSTEM_ID ? XrState::SystemReady
+                : m_instance != XR_NULL_HANDLE    ? XrState::InstanceReady
+                                                  : XrState::Uninitialised;
+    CVR_INFO("openxr.phase2", "detached=1 state=%d", (int)m_state);
+}
+
+void XrCore::shutdown() {
+    detach();
+    if (m_instance != XR_NULL_HANDLE) { xrDestroyInstance(m_instance); m_instance = XR_NULL_HANDLE; }
+    m_systemId = XR_NULL_SYSTEM_ID;
     if (m_state != XrState::Failed) m_state = XrState::Ended;
     CVR_INFO("xr.shutdown", "state=%d", (int)m_state);
+}
+
+// Eine verlorene Instanz (XR_ERROR_INSTANCE_LOST aus einem Aufruf, oder die
+// Laufzeit kuendigt den Verlust an). Alles auf ihr Gebaute kommt weg -- die
+// Aufrufe dahin duerfen selbst schon INSTANCE_LOST melden, das ist erwartet
+// und wird nicht bewertet --, die Instanz wird zerstoert und genullt, und
+// der Kern steht wieder wie vor Phase 1: Unavailable, also "spaeter noch
+// einmal". prepare() legt beim naechsten Versuch eine neue Instanz an. Eine
+// tote Instanz wird nie weiterverwendet.
+void XrCore::loseInstance(const char* where) {
+    CVR_WARN("openxr.instance", "lost=1 where=%s state=%d -- Abbau, dann Neustart von Phase 1",
+             where, (int)m_state);
+    m_frameActive = false;
+    detach();
+    if (m_instance != XR_NULL_HANDLE) {
+        const XrResult r = xrDestroyInstance(m_instance);
+        CVR_INFO("openxr.instance", "destroyed=1 result=%d", (int)r);
+        m_instance = XR_NULL_HANDLE;
+    }
+    m_systemId = XR_NULL_SYSTEM_ID;
+    m_runtimeName.clear();
+    m_systemName.clear();
+    m_recommendedW = 0;
+    m_recommendedH = 0;
+    for (auto& v : m_views) v = {XR_TYPE_VIEW};
+    m_viewsValid = false;
+    m_lastResult = XR_ERROR_INSTANCE_LOST;
+    if (m_state != XrState::Failed) m_state = XrState::Unavailable;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +649,7 @@ bool XrCore::pollEvents() {
         if (XR_FAILED(r)) {
             CVR_ERR("xr.event", "op=xrPollEvent result=%s", xrResultName(m_instance, r));
             ++m_stats.syncErrors;
+            if (r == XR_ERROR_INSTANCE_LOST) { loseInstance("xrPollEvent"); return false; }
             break;
         }
         switch (ev.type) {
@@ -510,6 +668,7 @@ bool XrCore::pollEvents() {
                     }
                     m_state = XrState::SessionRunning;
                     CVR_INFO("xr.session", "running=1");
+                    CVR_INFO("openxr.session", "running=1");
                 } else if (e->state == XR_SESSION_STATE_STOPPING) {
                     m_state = XrState::Stopping;
                     xrEndSession(m_session);
@@ -523,8 +682,10 @@ bool XrCore::pollEvents() {
                 break;
             }
             case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING:
-                CVR_WARN("xr.event", "kind=instance_loss_pending");
-                m_state = XrState::Stopping;
+                // Die Laufzeit kuendigt den Verlust an: nicht anhalten,
+                // sondern abbauen und spaeter eine neue Instanz anlegen.
+                CVR_WARN("xr.event", "kind=instance_loss_pending -- Instanz wird abgebaut, Phase 1 beginnt neu");
+                loseInstance("instance_loss_pending");
                 return false;
             case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING: {
                 auto* e = (XrEventDataReferenceSpaceChangePending*)&ev;
@@ -635,6 +796,7 @@ bool XrCore::beginFrame() {
     if (XR_FAILED(r)) {
         CVR_ERR("xr.frame", "op=xrWaitFrame result=%s", xrResultName(m_instance, r));
         ++m_stats.syncErrors;
+        if (r == XR_ERROR_INSTANCE_LOST) loseInstance("xrWaitFrame");
         return false;
     }
     m_frameState = fs;
@@ -645,6 +807,7 @@ bool XrCore::beginFrame() {
     if (XR_FAILED(r) && r != XR_FRAME_DISCARDED) {
         CVR_ERR("xr.frame", "op=xrBeginFrame result=%s", xrResultName(m_instance, r));
         ++m_stats.syncErrors;
+        if (r == XR_ERROR_INSTANCE_LOST) loseInstance("xrBeginFrame");
         return false;
     }
     ++m_stats.framesBegun;
@@ -949,6 +1112,7 @@ void XrCore::endFrame() {
         CVR_ERR("xr.frame", "op=xrEndFrame result=%s layers=%u",
                 xrResultName(m_instance, r), (unsigned)layers.size());
         ++m_stats.syncErrors;
+        if (r == XR_ERROR_INSTANCE_LOST) loseInstance("xrEndFrame");
     } else {
         ++m_stats.framesEnded;
         CVR_TRACE("xr.submit", "frame=%llu pair=%u layers=%u complete=%d",

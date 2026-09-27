@@ -9,9 +9,9 @@
 - For the default 120 FPS preset, use a 120 Hz headset refresh rate.
 - Close Cemu before starting a VR session.
 
-## Install Alpha 1.2
+## Install Alpha 1.3
 
-1. Extract `SuperMario3DWorld-VR-Alpha-1.2-install.zip`.
+1. Extract `SuperMario3DWorld-VR-Alpha-1.3-install.zip`.
 2. Copy its **`Mario3DWorld-VR`** folder into your Cemu folder, beside `Cemu.exe`.
 3. Open that folder and run **`Start-VR.cmd`**. The game starts in diorama mode.
 4. Launch the game from Cemu's game list.
@@ -36,27 +36,69 @@ The available presets are 60, 90, 120 and 144 FPS. Start with 60 if 120 is unsta
 
 ## Controls
 
-The VR controllers act as the GamePad.
+### Gamepad
 
-- left hand: X runs, Y throws, trigger is ZL, grip is L, the menu button is
-  Plus, the stick click is Minus
-- right hand: A jumps, B runs, trigger is B, grip is R
-- left stick moves, right stick looks
-- hold the left controller close to your head: while it is there the right
-  stick acts as the D-pad and stops turning the view, and a short pulse in
-  that controller confirms it
+Keep your normal Cemu gamepad mapping and use the game's standard controls.
+**Only R3 (right stick click) has a custom button assignment by default:**
+it cycles Diorama, Close diorama and First Person, then returns to Diorama.
+Each switch also resets camera turning and recentres your headset position.
+Make sure your physical right stick click is assigned to the emulated right
+stick click in Cemu.
 
-The GamePad keeps working at the same time, button by button. Nothing has to
-be mapped in Cemu for the controllers - but emulated controller 1 has to be a
-**Wii U GamePad**, because that is the path the controllers arrive on.
+The gamepad's other button assignments, including the D-pad, stay unchanged.
+The VR-controller bindings and gesture below apply only to VR controllers.
 
-## Switching between diorama and first person
+### VR controllers (motion controllers)
 
-Click the right controller's stick, or **R3** on the pad. The same click
-resets camera turning and recentres head position. Intro and world map use
-the diorama view.
+VR controllers use the bindings below instead of Cemu's physical gamepad
+mapping. **No button mapping is needed in Cemu for VR controllers.** Set
+emulated controller 1 to **Wii U GamePad**; other emulated controller types
+do not receive this input.
 
-The pad button is selectable in Cemu's settings for the VR graphic pack:
+The button names in this table are for **Quest / Oculus Touch controllers**.
+The Wii U column names the input sent to the game, not a button you need to
+assign in Cemu. Other controller layouts may differ and have not been validated.
+
+| VR controller input | Wii U input / action |
+| --- | --- |
+| Left stick | Left stick: move |
+| Right stick | Right stick: camera turning |
+| Left X | X: run / action |
+| Left Y | Y: game action |
+| Right A | A: jump / confirm |
+| Right B | X: run / action |
+| Left trigger | ZL |
+| Right trigger | B: jump / back in menus |
+| Left grip | L |
+| Right grip | R |
+| Left menu button | Plus: pause menu |
+| Left stick click | Minus |
+| Right stick click | Cycle camera modes and recenter |
+
+**D-pad gesture (VR controllers only):** hold the left controller near your
+head and use the right stick for D-pad directions. While the gesture is
+active, that stick stops turning the camera. A short vibration in the left
+controller confirms activation. Move it away from your head to return to
+camera turning.
+
+A configured gamepad can still be used alongside VR controllers. A resting
+VR stick does not override the gamepad stick.
+
+### Camera behaviour with either input device
+
+Head tracking works with either control option. In first person, right-stick
+left/right turns through 360 degrees, and movement follows the stick-turned
+view. These camera behaviours do not change the gamepad's button assignments.
+
+## Switching camera modes
+
+Click the right controller's stick, or **R3** on the pad: the first click
+moves to the close diorama, the same view from half the distance, the second
+to first person, the third back to the diorama. Every click resets camera
+turning and recentres head position. Intro and world map use the diorama
+view.
+
+Optionally, the gamepad mode-switch button can be changed in the VR graphic pack:
 right stick click (the default), left stick click, either of the two, ZL and
 ZR together, L and R together, or Minus. Pick another one if the stick click
 is not assigned in your Cemu gamepad settings.

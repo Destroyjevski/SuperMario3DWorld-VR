@@ -25,16 +25,33 @@
 
 namespace cemuvr {
 
-// Zustand des Kerns. Streng monoton bis Shutdown.
+// Zustand des Kerns.
+//
+// Zwei Phasen, seit 2026-09-27 ausdruecklich getrennt:
+//   Phase 1  Uninitialised -> InstanceReady -> SystemReady
+//            Laufzeit, Instanz, Headset, Sichtkonfiguration. Braucht KEIN
+//            Bild und keine Bildgroesse; laeuft, sobald die Schicht steht.
+//   Phase 2  SystemReady -> SessionCreated -> SessionRunning
+//            Sitzung, Raeume, Swapchains, Bildweg -- erst wenn die Quelle
+//            (das Stereo-Paar) mit Groesse und Format feststeht.
+// Unavailable ist kein Ende: Laufzeit oder Headset waren noch nicht da, und
+// spaeter wird es erneut versucht. Failed ist endgueltig.
 enum class XrState {
     Uninitialised,
+    Unavailable,
     InstanceReady,
+    SystemReady,
     SessionCreated,
     SessionRunning,
     Stopping,
     Ended,
     Failed
 };
+
+// Ausgang eines Aufbauschritts. Transient heisst: spaeter noch einmal, es
+// ist nichts kaputt. Fatal heisst: dieser Kern und diese Laufzeit passen
+// nicht zusammen, und Warten aendert daran nichts.
+enum class XrOutcome { Ok, Transient, Fatal };
 
 // Ergebnis eines Augen-Submits.
 enum class SubmitResult {
@@ -47,9 +64,8 @@ enum class SubmitResult {
 struct XrCoreConfig {
     std::string appName{"CemuVR"};
     std::string engineName{"Cemu"};
-    // Aufloesung je Auge. 0 = Empfehlung der Runtime uebernehmen.
-    uint32_t eyeWidth{0};
-    uint32_t eyeHeight{0};
+    // Die Augengroesse steht NICHT hier: sie kommt beim Anbinden (attach)
+    // aus dem Stereo-Paar. Die Empfehlung der Runtime ist nur Auskunft.
     // Weltmasstab: Welteinheiten je Meter. Vom Spielprofil ueberschreibbar.
     float worldScale{1.0f};
     float nearPlane{0.05f};
@@ -193,10 +209,28 @@ public:
     XrCore& operator=(const XrCore&) = delete;
 
     // --- Lebenszyklus ---------------------------------------------------
-    bool initialise(const XrCoreConfig& cfg);
+    // Phase 1: Laufzeit, Instanz, Headset und Sichtkonfiguration -- ohne
+    // Bild und ohne Bildgroesse. Mehrfach aufrufbar; nach Transient wird
+    // dort weitergemacht, wo es hakte (eine stehende Instanz bleibt) --
+    // ausser die Instanz ist verloren (XR_ERROR_INSTANCE_LOST): dann ist
+    // sie abgebaut und genullt, und der naechste Aufruf beginnt von vorn.
+    XrOutcome prepare(const XrCoreConfig& cfg);
     // Sitzung aufbauen. Wenn `device` null ist, legt der Kern ein eigenes
     // D3D11-Geraet auf dem von OpenXR genannten Adapter an.
-    bool createSession(ID3D11Device* device);
+    // Phase 2: Sitzung, Raeume, Swapchains in GENAU der Quellgroesse.
+    // `eyeWidth`, `eyeHeight` und `preferredFormat` kommen vom Stereo-Paar;
+    // null ist ein Fehler, kein Wink auf die Empfehlung der Runtime.
+    XrOutcome attach(uint32_t eyeWidth, uint32_t eyeHeight,
+                     DXGI_FORMAT preferredFormat, ID3D11Device* device);
+    // Phase 2 wieder abbauen, Phase 1 behalten: Sitzung, Swapchains, Geraet.
+    void detach();
+    bool prepared() const {
+        return m_state == XrState::SystemReady || m_state == XrState::SessionCreated ||
+               m_state == XrState::SessionRunning;
+    }
+    bool attached() const {
+        return m_state == XrState::SessionCreated || m_state == XrState::SessionRunning;
+    }
     void shutdown();
 
     // Ereignisse abholen. Muss regelmaessig gerufen werden.
@@ -297,6 +331,10 @@ public:
     DXGI_FORMAT swapchainFormat() const { return m_format; }
     ID3D11Device* device() const { return m_device; }
     const std::string& runtimeName() const { return m_runtimeName; }
+    const std::string& systemName() const { return m_systemName; }
+    // Empfehlung der Runtime je Auge -- Auskunft, keine Vorgabe.
+    uint32_t recommendedWidth()  const { return m_recommendedW; }
+    uint32_t recommendedHeight() const { return m_recommendedH; }
     float ipd() const;
     // Laeuft gerade ein XR-Frame? Die Cemu-Anbindung braucht das, weil sie
     // zwei Gastframes in einen XR-Frame einsortiert.
@@ -317,6 +355,11 @@ private:
     };
 
     bool createSwapchains();
+    XrOutcome attachSteps(ID3D11Device* device);
+    // Eine verlorene Instanz: alles auf ihr Gebaute wird abgebaut, die
+    // Instanz zerstoert und genullt, der Kern steht wieder wie vor Phase 1.
+    // Eine tote Instanz wird nie weiterverwendet.
+    void loseInstance(const char* where);
     bool locateViews();
     void releaseAllAcquired();
     bool copyIntoSwapchain(EyeChain& chain, ID3D11Texture2D* src);
@@ -337,6 +380,9 @@ private:
     XrCoreConfig m_cfg{};
     XrState      m_state{XrState::Uninitialised};
     XrCoreStats  m_stats{};
+    // Der letzte fehlgeschlagene Aufruf des Aufbaus: attach() sieht daran,
+    // ob hinter einem Transient die Instanz verloren ging.
+    XrResult     m_lastResult{XR_SUCCESS};
 
     XrInstance  m_instance{XR_NULL_HANDLE};
     XrSystemId  m_systemId{XR_NULL_SYSTEM_ID};
@@ -417,6 +463,9 @@ private:
     uint32_t    m_eyeHeight{0};
     DXGI_FORMAT m_format{DXGI_FORMAT_R8G8B8A8_UNORM_SRGB};
     std::string m_runtimeName;
+    std::string m_systemName;
+    uint32_t    m_recommendedW{0};
+    uint32_t    m_recommendedH{0};
     bool        m_runtimeVulkan{false};
 
     SessionAnchor m_sessionAnchor;

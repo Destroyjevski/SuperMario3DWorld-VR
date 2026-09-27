@@ -1,10 +1,10 @@
 # Super Mario 3D World VR
 
-**Alpha 1.2** · Windows x64 · Cemu · OpenXR
+**Alpha 1.3** · Windows x64 · Cemu · OpenXR
 
 Stereo rendering and six-degree-of-freedom head tracking for the Wii U
-version of **Super Mario 3D World**. Play with a gamepad in either diorama
-or first-person mode.
+version of **Super Mario 3D World**. Play with a gamepad or VR controllers
+in diorama, close diorama or first-person mode.
 
 [Installation](INSTALL.md) · [Known issues](KNOWN-ISSUES.md) ·
 [Build from source](BUILD.md) · [Credits](CREDITS.md)
@@ -14,34 +14,41 @@ or first-person mode.
 | Mode | Selection | View |
 | --- | --- | --- |
 | **Diorama** | Default on start | View the level as a diorama. |
-| **First person** | Click the right stick (R3) | View from the character, with free 360-degree stick turning. |
+| **Close diorama** | Click the right stick (R3) once | The same diorama from half the distance. |
+| **First person** | Click R3 again | View from the character, with free 360-degree stick turning. |
 
-Run `Start-VR.cmd`. Click **R3** in a level to switch modes without restarting
-Cemu; click again to return. Each switch also resets camera turning and
-recentres your headset position. Intro and world map use the diorama view.
+Run `Start-VR.cmd`. Click **R3** in a level to step through the three views
+without restarting Cemu; a third click returns to the diorama. Each switch
+also resets camera turning and recentres your headset position. Intro and
+world map use the diorama view.
 
-Both modes include room-anchored menus and HUD, head tracking, and VR camera
+All modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
 
-## New in Alpha 1.2
+## New in Alpha 1.3
 
-- **VR controller input**, alongside gamepad support, with no button mapping
-  required in Cemu. Emulated controller 1 must be a Wii U GamePad.
-- **D-pad gesture:** hold the left controller near your head to use the right
-  stick as the D-pad, with a short haptic pulse when the gesture engages.
-- **Selectable mode-switch button** in the VR graphic pack settings. The
-  right VR controller's stick click also switches modes.
-- **First-person camera improvements:** a level horizon, closer near clipping,
-  hidden player model, and visibility checks aligned with the VR camera.
-- Depth of field, flare filtering and god rays are disabled for VR.
+- **A third view between diorama and first person.** The close diorama shows
+  the level from half the diorama's distance, with the same direction, head
+  tracking and scale. The mode switch now steps from the diorama to the close
+  diorama, then to first person, then back.
+- **The known eye-dependent lighting mismatch is fixed.** A light no longer sits on the left
+  wall in one eye and on the right wall in the other; the screen-space passes
+  now use the eye's camera and projection.
+- **Sturdier start:** OpenXR is prepared at the first frame and attached once
+  the stereo pair is known, so Cemu's swapchain rebuild at start and a runtime
+  that is not ready yet no longer break the session.
+
+Alpha 1.2 brought VR controller input with no button mapping in Cemu, the
+D-pad gesture, the selectable mode-switch button and the first-person camera
+improvements; they are all still here.
 
 See [release notes](RELEASE_NOTES.md) for details and [installation](INSTALL.md)
-for controller bindings. Lighting, shadows and depth effects still have
-limitations; see [known issues](KNOWN-ISSUES.md).
+for controller bindings. Shadows and depth effects still have limitations;
+see [known issues](KNOWN-ISSUES.md).
 
 ## Get started
 
-1. Download the **Alpha 1.2 installation ZIP** from [Releases](../../releases).
+1. Download the **Alpha 1.3 installation ZIP** from [Releases](../../releases).
 2. Place its `Mario3DWorld-VR` folder beside `Cemu.exe`.
 3. Close Cemu and run `Start-VR.cmd`.
 4. Open Super Mario 3D World in Cemu and play with your gamepad or VR controllers.
@@ -68,19 +75,37 @@ Cemu and the game are not included.
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| Head movement | Look around and move your viewpoint in VR |
-| Gamepad | Normal game controls |
-| Right stick click (R3) | Switch Diorama / First Person, reset camera turning and recentre head position |
-| Right stick left/right, first person | Turn freely through 360 degrees |
-| Left stick, first person | Move relative to the stick-turned view |
+### Gamepad
 
-For VR controller bindings and alternative mode-switch buttons, see
-[INSTALL.md](INSTALL.md#controls).
+Use the game's standard controls with your existing Cemu gamepad mapping.
+**R3 (right stick click) is the only custom button assignment by default:**
+it cycles **Diorama → Close diorama → First Person → Diorama** and resets
+camera turning and your headset centre. Make sure R3 is mapped in Cemu.
 
-The HUD stays in the room as you turn. Head tracking remains separate from
-stick turning.
+The VR-controller bindings and D-pad gesture below do not apply to the
+gamepad. Its D-pad keeps working normally. An alternative mode-switch button
+can be selected in the VR graphic pack settings.
+
+### VR controllers (motion controllers)
+
+VR controllers use their own bindings and need no button mapping in Cemu.
+Set emulated controller 1 to **Wii U GamePad**.
+
+- **Left stick:** move. **Right stick:** turn the camera.
+- **Right stick click:** cycle camera modes and recenter.
+- **D-pad gesture:** hold the left controller near your head, then use the
+  right stick for D-pad directions. Move the left controller away to resume
+  camera turning. A short vibration confirms the gesture.
+
+See the [VR controller button table](INSTALL.md#vr-controllers-motion-controllers)
+for the full Quest/Touch layout. These bindings are separate from the gamepad's.
+
+### Camera behaviour with either input device
+
+Head movement controls your viewpoint in VR. In first person, the right stick
+turns freely through 360 degrees and the left stick moves relative to that
+stick-turned view. The HUD stays in the room as you turn; head tracking
+remains separate from stick turning.
 
 ## Frame rate
 

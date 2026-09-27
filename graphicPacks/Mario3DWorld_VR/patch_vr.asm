@@ -47,6 +47,7 @@ rrSecondDraw:
 mflr r0
 stwu r1, -0x20(r1)
 stw r0, 0x24(r1)
+bl mtProjectionRestore
 lis r12, rrEnabled@ha
 addi r12, r12, rrEnabled@l
 lwz r11, 0(r12)
@@ -120,6 +121,7 @@ stw r0, 8(r1)
 mflr r0
 stw r0, 0x24(r1)
 bl import.gx2.GX2DrawDone
+bl mtProjectionRestore
 lwz r0, 0x24(r1)
 mtlr r0
 lwz r0, 8(r1)
@@ -364,9 +366,13 @@ cmpwi r7, 0
 beq mtPadDone
 cmpw r7, r11
 beq mtPadDone
-lwz r7, 0(r10)
-cmpwi r7, 0
+; The same three states as the pad switch.
+lwz r11, 0(r10)
+li r7, 2
+cmpwi r11, 0
+beq mtPadFlip
 li r7, 1
+cmpwi r11, 2
 beq mtPadFlip
 li r7, 0
 mtPadFlip:
@@ -1223,6 +1229,18 @@ lwz r12, 24(r1)
 addi r1, r1, 0x20
 b mtPreparePose
 mtUseDiorama:
+; The middle camera is the diorama at half distance. Like first person it
+; belongs to gameplay scenes; intro and world map stay the diorama.
+lwz r0, 28(r8)
+cmpwi r0, 2
+bne mtUseDioramaZero
+lis r11, mrSceneClass@ha
+lwz r11, mrSceneClass@l(r11)
+lis r7, 0x1032
+ori r7, r7, 0x86DC
+cmpw r11, r7
+beq mtPreparePose
+mtUseDioramaZero:
 li r0, 0
 stw r0, 28(r8)
 mtPreparePose:
@@ -1791,6 +1809,22 @@ fadds f5, f5, f1
 lis r8, rrDioramaAdvance@ha
 addi r8, r8, rrDioramaAdvance@l
 lfs f6, 0(r8)
+; Middle camera: A' = A + (1 - m) * D, the eye moves forward by what the kept
+; distance loses.
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lwz r8, 28(r8)
+cmpwi r8, 2
+bne mtMiddleAdvanceRender
+lis r8, rrDioramaDistance@ha
+addi r8, r8, rrDioramaDistance@l
+lfs f1, 0(r8)
+lis r8, mtMiddle@ha
+addi r8, r8, mtMiddle@l
+lfs f2, 4(r8)
+fmuls f1, f1, f2
+fadds f6, f6, f1
+mtMiddleAdvanceRender:
 fmuls f6, f6, f5
 lfs f1, 0(r12)
 lfs f2, 0(r3)
@@ -1990,6 +2024,17 @@ fadds f5, f5, f1
 lis r8, rrDioramaDistance@ha
 addi r8, r8, rrDioramaDistance@l
 lfs f1, 0(r8)
+; Middle camera: D' = m * D, the look-at distance of the camera fields.
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lwz r8, 28(r8)
+cmpwi r8, 2
+bne mtMiddleDistance
+lis r8, mtMiddle@ha
+addi r8, r8, mtMiddle@l
+lfs f2, 0(r8)
+fmuls f1, f1, f2
+mtMiddleDistance:
 fmuls f5, f5, f1
 lfs f1, 0(r9)
 lfs f2, 12(r9)
@@ -2687,9 +2732,14 @@ cmpwi r7, 0
 beq mtInputMode
 cmpw r7, r9
 beq mtInputMode
-lwz r7, 0(r8)
-cmpwi r7, 0
+; Three camera states on the one switch: diorama (0) -> middle (2) ->
+; first person (1) -> diorama. Every other reader asks for 1.
+lwz r9, 0(r8)
+li r7, 2
+cmpwi r9, 0
+beq mtStoreMode
 li r7, 1
+cmpwi r9, 2
 beq mtStoreMode
 li r7, 0
 mtStoreMode:
@@ -3350,6 +3400,42 @@ cmpw r11, r12
 bne mrStereoRestore
 mr r3, r27
 mr r16, r31
+; View struct override (1/3): never copy from a copy. If the struct still
+; hands us one of our own copies, take the remembered native object.
+lis r12, rrProjectionCopies@ha
+addi r12, r12, rrProjectionCopies@l
+cmplw r16, r12
+blt mtProjNativeKnown
+addi r11, r12, 736
+cmplw r16, r11
+bge mtProjNativeKnown
+lis r11, mtNativeProjection@ha
+lwz r16, mtNativeProjection@l(r11)
+cmpwi r16, 0
+beq mrStereoRestore
+mr r31, r16
+mtProjNativeKnown:
+lis r11, mtNativeProjection@ha
+addi r11, r11, mtNativeProjection@l
+stw r16, 0(r11)
+; Same for the camera: r27 is the render function's camera, r3 goes to the
+; camera hook as the source of the copy.
+lis r12, rrCamera0@ha
+addi r12, r12, rrCamera0@l
+cmplw r27, r12
+blt mtCamNativeKnown
+addi r11, r12, 352
+cmplw r27, r11
+bge mtCamNativeKnown
+lis r11, mtNativeCamera@ha
+lwz r27, mtNativeCamera@l(r11)
+cmpwi r27, 0
+beq mrStereoRestore
+mr r3, r27
+mtCamNativeKnown:
+lis r11, mtNativeCamera@ha
+addi r11, r11, mtNativeCamera@l
+stw r27, 0(r11)
 bl rrCameraHook
 mr r15, r3
 li r21, 0
@@ -3358,6 +3444,18 @@ cmpw r16, r31
 beq mrStereoRestore
 mr r27, r15
 mr r31, r16
+; View struct override (2/3): every reader of the struct sees this eye's
+; copies from here on.
+lwz r11, 4(r24)
+lwz r11, 0x18(r11)
+lis r12, mtProjectionField@ha
+addi r12, r12, mtProjectionField@l
+stw r11, 0(r12)
+stw r16, 0xC(r11)
+stw r15, 4(r11)
+lwz r11, 4(r12)
+addi r11, r11, 1
+stw r11, 4(r12)
 lis r12, mrActiveCamera@ha
 stw r27, mrActiveCamera@l(r12)
 mrStereoRestore:
@@ -4776,6 +4874,22 @@ fadds f5, f5, f1
 lis r8, rrDioramaAdvance@ha
 addi r8, r8, rrDioramaAdvance@l
 lfs f6, 0(r8)
+; Middle camera: A' = A + (1 - m) * D, the eye moves forward by what the kept
+; distance loses.
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lwz r8, 28(r8)
+cmpwi r8, 2
+bne mtMiddleAdvanceCull
+lis r8, rrDioramaDistance@ha
+addi r8, r8, rrDioramaDistance@l
+lfs f1, 0(r8)
+lis r8, mtMiddle@ha
+addi r8, r8, mtMiddle@l
+lfs f2, 4(r8)
+fmuls f1, f1, f2
+fadds f6, f6, f1
+mtMiddleAdvanceCull:
 fmuls f6, f6, f5
 lfs f1, 0(r12)
 lfs f2, 0(r3)
@@ -5479,6 +5593,10 @@ mtMotionData:
 .int 0xBF000000
 .int 0x00000000
 
+mtMiddle:
+.int 0x3F000000
+.int 0x3F000000
+
 ; Depth of field off: take the branch the game takes when its own switch is
 ; clear, so the pass is never entered and r8 keeps the previous target.
 0x024AD714 = mtDofSkip:
@@ -5493,3 +5611,50 @@ mtMotionData:
 ; nothing to do, so the effect is never entered and r30 keeps the target.
 0x022D8690 = mtGodRaySkip:
 0x022D85CC = b mtGodRaySkip
+
+; View struct override (3/3): the native objects go back before the game's
+; own logic runs. Reached from rrBeforeCalc and rrSecondDraw with LR saved.
+mtProjectionRestore:
+lis r12, mtProjectionField@ha
+addi r12, r12, mtProjectionField@l
+lwz r11, 0(r12)
+cmpwi r11, 0
+beqlr
+lwz r0, 0xC(r11)
+lis r12, rrProjectionCopies@ha
+addi r12, r12, rrProjectionCopies@l
+cmplw r0, r12
+blt mtProjectionRestoreCamera
+addi r12, r12, 736
+cmplw r0, r12
+bge mtProjectionRestoreCamera
+lis r12, mtNativeProjection@ha
+lwz r12, mtNativeProjection@l(r12)
+cmpwi r12, 0
+beq mtProjectionRestoreCamera
+stw r12, 0xC(r11)
+mtProjectionRestoreCamera:
+lwz r0, 4(r11)
+lis r12, rrCamera0@ha
+addi r12, r12, rrCamera0@l
+cmplw r0, r12
+blt mtProjectionRestoreDone
+addi r12, r12, 352
+cmplw r0, r12
+bge mtProjectionRestoreDone
+lis r12, mtNativeCamera@ha
+lwz r12, mtNativeCamera@l(r12)
+cmpwi r12, 0
+beq mtProjectionRestoreDone
+stw r12, 4(r11)
+mtProjectionRestoreDone:
+blr
+
+; struct, writes; the native camera and projection last seen there.
+mtProjectionField:
+.int 0
+.int 0
+mtNativeCamera:
+.int 0
+mtNativeProjection:
+.int 0

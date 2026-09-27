@@ -1,11 +1,10 @@
 # Known issues
 
-**Alpha 1.2** is intended for early testing. A full playthrough has not
+**Alpha 1.3** is intended for early testing. A full playthrough has not
 been validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 
-## Lighting and shadows
+## Shadows
 
-- Lighting can differ between the eyes, most visible in small enclosed stages.
 - Shadows can be misplaced or perspectivally wrong.
 
 ## Rendering and performance
@@ -19,11 +18,15 @@ been validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 - Cinematic framing has limited testing, particularly in diorama mode.
 - Higher render rates do not interpolate animation between the game's 60 Hz
   updates. 90 and 144 FPS presets remain experimental.
-- Death, respawn and scene transitions may still cause instability at 120 FPS.
-  If a crash occurs, try the 60 FPS reference preset and report the location
-  and steps that trigger it.
+- A crash on death and respawn at 120 FPS was reproduced and fixed. Not every
+  death, respawn and scene-transition situation has been validated since; if a
+  crash occurs, report the location and steps that trigger it.
 
-## Controls
+## VR controllers (motion controllers)
+
+These limitations concern VR-controller input. A physical gamepad keeps the
+game's standard button assignments, with R3 used for camera-mode switching
+by default.
 
 - The GamePad's touchscreen and its microphone have no equivalent on a VR
   controller and cannot be reached from one.

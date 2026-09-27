@@ -128,15 +128,56 @@ DeviceData* deviceOf(void* obj) {
 // Zustand der VR-Anbindung
 // ---------------------------------------------------------------------------
 
+// Wo der Aufbau steht, fuer das Protokoll. Der Kern kennt seinen eigenen
+// Zustand (XrState); dies hier ist die Sicht der Schicht, mit dem Warten auf
+// die Bildquelle dazwischen.
+enum class LayerPhase {
+    LayerLoaded,
+    XrNotAttempted,
+    XrUnavailable,      // transient: Laufzeit oder Headset noch nicht da
+    XrInstanceReady,
+    XrSystemReady,      // Phase 1 fertig
+    WaitingForPair,     // OpenXR steht, die Bildquelle noch nicht
+    PairKnown,          // Groesse und Format der Quelle bekannt
+    SessionReady,       // Phase 2: Sitzung und Swapchains
+    InteropReady,       // Bildweg steht
+    Running,
+    Fatal
+};
+
+const char* phaseName(LayerPhase p) {
+    switch (p) {
+        case LayerPhase::LayerLoaded:     return "layer_loaded";
+        case LayerPhase::XrNotAttempted:  return "openxr_not_attempted";
+        case LayerPhase::XrUnavailable:   return "openxr_unavailable_waiting";
+        case LayerPhase::XrInstanceReady: return "openxr_instance_ready";
+        case LayerPhase::XrSystemReady:   return "openxr_system_ready";
+        case LayerPhase::WaitingForPair:  return "waiting_for_stereo_pair";
+        case LayerPhase::PairKnown:       return "stereo_pair_parameters_known";
+        case LayerPhase::SessionReady:    return "xr_session_ready";
+        case LayerPhase::InteropReady:    return "xr_swapchains_interop_ready";
+        case LayerPhase::Running:         return "running";
+        case LayerPhase::Fatal:           return "fatal_failure";
+    }
+    return "?";
+}
+
 struct LayerState {
     bool      enabled{false};
     bool      dualOutput{false};
     bool      streamGuestFrames{false};
     Performance performance;
     uint64_t padPresentCount{0};
-    bool      initTried{false};
-    bool      ready{false};
-    bool      failed{false};
+    // Phase 1 (OpenXR, Laufzeit, Headset) lebt in `xr`; hier steht nur, wann
+    // sie erneut versucht wird, ob etwas endgueltig gescheitert ist, und
+    // wie weit die Schicht insgesamt ist.
+    uint64_t  nextXrAttemptMs{0};
+    bool      xrConfigBuilt{false};
+    XrCoreConfig xrConfig;
+    LayerPhase phase{LayerPhase::LayerLoaded};
+    bool      pairAnnounced{false};
+    bool      ready{false};      // Phase 2 samt Bildweg steht
+    bool      failed{false};     // endgueltig: Kern und Laufzeit passen nicht
     XrCore    xr;
     EyeInterop interop;
     CemuBridge bridge;
@@ -250,39 +291,33 @@ DXGI_FORMAT preferredDxgiFor(VkFormat cemuFormat) {
 }
 
 // ---------------------------------------------------------------------------
-// Verzoegerter Aufbau -- erst wenn Cemus TV-Swapchain bekannt ist
+// Aufbau in zwei Phasen
+//
+//   Phase 1  OpenXR: Laufzeit, Instanz, Headset, Sichtkonfiguration.
+//            Beginnt mit dem ersten Fernseherbild und braucht KEIN Paar.
+//            Ein Headset, das noch nicht da ist, wird spaeter erneut gesucht.
+//   Phase 2  Sitzung, Swapchains, Bildweg -- erst wenn die Quelle steht:
+//            im Paartransport das erste vollstaendige Stereo-Paar mit seiner
+//            Groesse und seinem Format, sonst Cemus Fernseher.
+//
+// Frage A (ist OpenXR da?) haengt damit nicht mehr an Frage B (ist ein Paar
+// da?). Ohne Paar steht im Protokoll trotzdem, welche Laufzeit und welches
+// Headset erkannt sind und dass nur noch auf Bilddaten gewartet wird.
 // ---------------------------------------------------------------------------
 
-bool lazyInit(DeviceData* dd, const SwapRec& sc) {
-    if (g.initTried) return g.ready;
-    g.initTried = true;
+const uint64_t kXrRetryMs = 2000;   // Abstand zweier Versuche nach Transient
 
-    CVR_INFO("init.begin", "tvExtent=%ux%u cemuFormat=%s",
-             sc.extent.width, sc.extent.height, vkFormatName(sc.format));
+void setPhase(LayerPhase p) {
+    if (g.phase == p) return;
+    CVR_INFO("lifecycle", "phase=%s (vorher %s)", phaseName(p), phaseName(g.phase));
+    g.phase = p;
+}
 
-    if (!dd->externalMemoryEnabled) {
-        CVR_ERR("init", "reason=external_memory_extensions_not_enabled");
-        g.failed = true;
-        return false;
-    }
-
-    const DXGI_FORMAT want = envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true) && sc.format==VK_FORMAT_R8G8B8A8_UNORM
-        ? DXGI_FORMAT_R8G8B8A8_UNORM : preferredDxgiFor(sc.format);
-    if (want == DXGI_FORMAT_UNKNOWN) {
-        CVR_ERR("init", "reason=unsupported_cemu_format format=%s -- "
-                        "es wird NICHT geraten", vkFormatName(sc.format));
-        g.failed = true;
-        return false;
-    }
-
+// Die Vorgaben fuer den Kern, die nicht von der Bildgroesse abhaengen.
+XrCoreConfig buildXrConfig() {
     XrCoreConfig cfg;
     cfg.appName = "CemuVR";
     cfg.engineName = "Cemu";
-    // Augengroesse = Cemus TV-Groesse. Damit bleibt der ganze Weg eine
-    // 1:1-Kopie; es wird nirgends skaliert.
-    cfg.eyeWidth  = sc.extent.width;
-    cfg.eyeHeight = sc.extent.height;
-    cfg.preferredFormat = want;
     // Der Bildlagemessung und der Pruefsumme liegt dieselbe Rueckkopie
     // zugrunde. Beides zugleich waere sie doppelt, also hat die Messung
     // Vorrang, sobald sie verlangt wird.
@@ -325,13 +360,90 @@ bool lazyInit(DeviceData* dd, const SwapRec& sc) {
     if(envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true)) g.streamGuestFrames=false;
     if (g.streamGuestFrames && g.dualOutput) {
         CVR_ERR("init", "stream and dual-output modes cannot be combined");
-        g.failed=true; return false;
+        g.failed=true;
     }
     cfg.streamGuestFrames=g.streamGuestFrames;
     if (g.streamGuestFrames) cfg.repeatMissingEye=true;
     CVR_INFO("delivery.mode", "stream=%d -- one fresh eye per guest; image-pose binding retained",(int)g.streamGuestFrames);
-    if (!g.xr.initialise(cfg)) { g.failed = true; return false; }
-    if (!g.xr.createSession(nullptr)) { g.failed = true; return false; }
+    return cfg;
+}
+
+// Phase 1. Wahr, sobald Laufzeit, Instanz und Headset stehen. Ein
+// transienter Fehlschlag wird alle kXrRetryMs erneut versucht -- am
+// naechsten Fernseherbild, nicht in einer Schleife.
+bool prepareXr() {
+    if (g.failed) return false;
+    if (g.xr.prepared()) return true;
+    const XrState s = g.xr.state();
+    if (s == XrState::Stopping || s == XrState::Failed) return false;
+    const uint64_t now = GetTickCount64();
+    if (now < g.nextXrAttemptMs) return false;
+    if (!g.xrConfigBuilt) {
+        g.xrConfig = buildXrConfig();
+        g.xrConfigBuilt = true;
+        if (g.failed) { setPhase(LayerPhase::Fatal); return false; }
+    }
+    switch (g.xr.prepare(g.xrConfig)) {
+        case XrOutcome::Ok:
+            g.tornDown = false;
+            setPhase(LayerPhase::XrSystemReady);
+            return true;
+        case XrOutcome::Transient:
+            g.nextXrAttemptMs = now + kXrRetryMs;
+            CVR_WARN("openxr.phase1", "unavailable=1 retry_ms=%llu -- Laufzeit oder Headset noch nicht da",
+                     (unsigned long long)kXrRetryMs);
+            setPhase(LayerPhase::XrUnavailable);
+            return false;
+        default:
+            g.failed = true;
+            setPhase(LayerPhase::Fatal);
+            return false;
+    }
+}
+
+// Phase 2 samt Bildweg. `sc` ist die Quelle: Groesse und Format des
+// Stereo-Paars, im alten Fernseherweg die des Fernsehers. Die Swapchains
+// bekommen genau diese Groesse; es wird nirgends skaliert.
+bool attachXr(DeviceData* dd, const SwapRec& sc) {
+    if (g.ready) return true;
+    if (g.failed || !g.xr.prepared()) return false;
+    const uint64_t now = GetTickCount64();
+    if (now < g.nextXrAttemptMs) return false;
+
+    CVR_INFO("init.begin", "source=%ux%u cemuFormat=%s",
+             sc.extent.width, sc.extent.height, vkFormatName(sc.format));
+
+    if (!dd->externalMemoryEnabled) {
+        CVR_ERR("init", "reason=external_memory_extensions_not_enabled");
+        g.failed = true;
+        setPhase(LayerPhase::Fatal);
+        return false;
+    }
+
+    const DXGI_FORMAT want = envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true) && sc.format==VK_FORMAT_R8G8B8A8_UNORM
+        ? DXGI_FORMAT_R8G8B8A8_UNORM : preferredDxgiFor(sc.format);
+    if (want == DXGI_FORMAT_UNKNOWN) {
+        CVR_ERR("init", "reason=unsupported_cemu_format format=%s -- "
+                        "es wird NICHT geraten", vkFormatName(sc.format));
+        g.failed = true;
+        setPhase(LayerPhase::Fatal);
+        return false;
+    }
+
+    switch (g.xr.attach(sc.extent.width, sc.extent.height, want, nullptr)) {
+        case XrOutcome::Ok:
+            break;
+        case XrOutcome::Transient:
+            g.nextXrAttemptMs = now + kXrRetryMs;
+            CVR_WARN("openxr.phase2", "unavailable=1 retry_ms=%llu", (unsigned long long)kXrRetryMs);
+            setPhase(LayerPhase::XrUnavailable);
+            return false;
+        default:
+            g.failed = true;
+            setPhase(LayerPhase::Fatal);
+            return false;
+    }
+    setPhase(LayerPhase::SessionReady);
 
     // Kanalreihenfolge gegenpruefen. Ein stiller Tausch von Rot und Blau ist
     // genau der Fehler, der im Fake-HMD-Belegweg schon einmal aufgetreten ist.
@@ -341,24 +453,26 @@ bool lazyInit(DeviceData* dd, const SwapRec& sc) {
                         "abgebrochen statt Rot und Blau zu vertauschen",
                 vkFormatName(sc.format), (unsigned)got);
         g.failed = true;
+        setPhase(LayerPhase::Fatal);
         return false;
     }
     if (g.xr.eyeWidth() != sc.extent.width || g.xr.eyeHeight() != sc.extent.height) {
         CVR_ERR("init", "reason=eye_size_mismatch xr=%ux%u cemu=%ux%u",
                 g.xr.eyeWidth(), g.xr.eyeHeight(), sc.extent.width, sc.extent.height);
         g.failed = true;
+        setPhase(LayerPhase::Fatal);
         return false;
     }
 
     if (!g.interop.createD3D11Side(g.xr.device(), sc.extent.width, sc.extent.height, got)) {
-        g.failed = true; return false;
+        g.failed = true; setPhase(LayerPhase::Fatal); return false;
     }
     const VkFormat vkf = dxgiToVk(got);
     if (vkf == VK_FORMAT_UNDEFINED) {
         CVR_ERR("init", "reason=no_vk_equivalent dxgi=%u", (unsigned)got);
-        g.failed = true; return false;
+        g.failed = true; setPhase(LayerPhase::Fatal); return false;
     }
-    if (!g.interop.importIntoVulkan(dd->vk, vkf)) { g.failed = true; return false; }
+    if (!g.interop.importIntoVulkan(dd->vk, vkf)) { g.failed = true; setPhase(LayerPhase::Fatal); return false; }
 
     g.dev = dd;
     g.ready = true;
@@ -366,12 +480,15 @@ bool lazyInit(DeviceData* dd, const SwapRec& sc) {
     g.delayEvery = (uint32_t)envNum("CEMUVR_TEST_DELAY_EVERY", 0);
     g.delayMs    = (uint32_t)envNum("CEMUVR_TEST_DELAY_MS", 0);
 
+    CVR_INFO("interop", "ready=1 size=%ux%u dxgi=%u vk=%s",
+             sc.extent.width, sc.extent.height, (unsigned)got, vkFormatName(vkf));
     CVR_INFO("init.done",
              "ready=1 eye=%ux%u dxgi=%u vk=%s runtime=\"%s\" maxPairs=%llu",
              g.xr.eyeWidth(), g.xr.eyeHeight(), (unsigned)got, vkFormatName(vkf),
              g.xr.runtimeName().c_str(), (unsigned long long)g.maxPairs);
     if (g.delayEvery)
         CVR_INFO("init.done", "testDelay every=%u ms=%u", g.delayEvery, g.delayMs);
+    setPhase(LayerPhase::InteropReady);
 
     // Punkte 1 bis 6: Titel erkennen, Profil suchen, pruefen, laden, init.
     const uint64_t title = g.bridge.titleId();
@@ -390,6 +507,21 @@ void closeXrFrameIfOpen() {
     }
 }
 
+// Phase 2 abbauen, Phase 1 behalten. Fuer den Fernseherweg, dessen
+// Bildgroesse an Cemus Swapchain haengt; im Paartransport wird er nicht
+// gebraucht, weil das Paar die Quelle ist und den Fernseher ueberlebt.
+void detachXr(const char* reason) {
+    closeXrFrameIfOpen();
+    if (g.dev) g.interop.destroyVulkanSide(g.dev->vk);
+    g.interop.destroyD3D11Side();
+    g.xr.detach();
+    g.ready = false;
+    g.dev = nullptr;
+    g.pairAnnounced = false;
+    CVR_INFO("openxr.phase2", "detached=1 reason=%s -- Phase 1 bleibt", reason);
+    setPhase(g.xr.prepared() ? LayerPhase::XrSystemReady : LayerPhase::XrNotAttempted);
+}
+
 // `alsoProfile` false: nur die VR-Ausgabe abbauen, das Profil bleibt geladen.
 // Cemu legt beim Start einmal eine Swapchain an und ersetzt sie sofort wieder.
 // Wuerde das Profil dabei entladen und neu geladen, saehe man je Cemu-Sitzung
@@ -402,7 +534,8 @@ void teardown(bool alsoProfile = true) {
     // aufrufbar und tut beim zweiten Mal nichts.
     if (alsoProfile) g.profiles.detach("teardown");
 
-    if (!g.initTried || g.tornDown) return;
+    if (g.tornDown) return;
+    if (g.xr.state() == XrState::Uninitialised && !g.ready) return;   // nie etwas aufgebaut
     g.tornDown = true;
     if (!alsoProfile)
         CVR_INFO("profile.host", "VR-Ausgabe wird neu aufgebaut, Profil bleibt geladen");
@@ -462,6 +595,9 @@ void teardown(bool alsoProfile = true) {
              (int)g.streamGuestFrames,(unsigned long long)s.streamFrames,(unsigned long long)s.framesEnded);
     g.ready = false;
     g.dev = nullptr;
+    g.pairAnnounced = false;
+    g.nextXrAttemptMs = 0;
+    setPhase(LayerPhase::LayerLoaded);
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +738,59 @@ void acknowledgeReferenceProbe() {
 
 struct ReferencePoseHistoryEntry {uint32_t token{};CemuVR_FrameContext context{};};
 static std::array<ReferencePoseHistoryEntry,2048> referencePoseHistory{};
+
+// Die Lichtsonde des Gastes auslesen. Nur lesen, nur protokollieren.
+//
+// Aufbau des Blocks, so wie ihn `light_probe.py` anlegt: Kennung, Version,
+// Zaehler, zuletzt geschriebenes Auge, zwei Zeiger, zwei freie Woerter, dann
+// je Auge das Auge selbst, der Objektzeiger und ein Fenster von 96 Woertern.
+void readLightProbe(uint64_t generation) {
+    if(!envFlag("CEMUVR_LIGHT_PROBE",false))return;
+    constexpr uint32_t kWords=96, kStride=2+kWords;
+    static uint8_t* block=nullptr;
+    static bool searched=false;
+    auto* base=g.bridge.guestMemoryBase();
+    if(!base)return;
+    if(!searched) {
+        searched=true;
+        const uint8_t sig[]={0x43,0x54,0x50,0x52,0,0,0,1};
+        for(uintptr_t off=0x01800000;off<0x01a00000 && !block;) {
+            MEMORY_BASIC_INFORMATION mbi{};
+            if(!VirtualQuery(base+off,&mbi,sizeof(mbi)))break;
+            uintptr_t next=(uintptr_t)mbi.BaseAddress+mbi.RegionSize-(uintptr_t)base;
+            if(next<=off)break;
+            uintptr_t end=(std::min)(next,uintptr_t(0x01a00000));
+            if(mbi.State==MEM_COMMIT && (mbi.Protect&(PAGE_READWRITE|PAGE_EXECUTE_READWRITE)) && !(mbi.Protect&PAGE_GUARD))
+                for(uintptr_t p=off;p+32+2*kStride*4<=end;p+=4)
+                    if(!std::memcmp(base+p,sig,8)){block=base+p;break;}
+            off=next;
+        }
+        CVR_INFO("light.probe","found=%d guest=%08X",int(block!=nullptr),
+            block?uint32_t(block-base):0u);
+    }
+    if(!block || generation%180)return;
+    auto word=[&](uint32_t index){return _byteswap_ulong(*(const uint32_t*)(block+index*4));};
+    const uint32_t count=word(2);
+    if(!count)return;
+    const uint32_t left=8, right=8+kStride;
+    CVR_INFO("light.probe","writes=%u lastEye=%u table=%08X light=%08X "
+                           "eye0 r27=%08X r29=%08X r30=%08X | eye1 r27=%08X r29=%08X r30=%08X",
+        count,word(3),word(4),word(5),
+        word(left+2),word(left+3),word(left+4),
+        word(right+2),word(right+3),word(right+4),
+        word(left),word(left+1),word(right),word(right+1));
+    // Nur die Woerter, die sich unterscheiden. Gleiche sagen nichts.
+    unsigned shown=0;
+    for(uint32_t i=0;i<3*22 && shown<24;++i) {
+        const uint32_t a=word(left+5+i), b=word(right+5+i);
+        if(a==b)continue;
+        float fa,fb;std::memcpy(&fa,&a,4);std::memcpy(&fb,&b,4);
+        CVR_INFO("light.diff","word=%u left=%08X right=%08X leftF=%.5f rightF=%.5f",
+            i,a,b,fa,fb);
+        ++shown;
+    }
+    if(!shown)CVR_INFO("light.diff","identical=1 windows=3x22");
+}
 
 void publishReferencePose(uint64_t generation) {
     // Enabled by default for the Mario release; an environment override remains available.
@@ -784,6 +973,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
         uint32_t pairId{};g.xr.setPresentInfo(g.tvPresentCount,0);
         g.xr.beginGuestFrame(generation,&pairId); // one simulation generation, two explicit eyes
         publishReferencePose(generation);
+        readLightProbe(generation);
         const bool strict=envFlag("CEMUVR_REFERENCE_POSE_STAMP",true);
         const uint32_t token=pairs.poseTokens[slot*2];
         const bool menu=token==0x10000 && pairs.poseTokens[slot*2+1]==0x10000;
@@ -878,20 +1068,49 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
     }
 
     SwapRec sourceSpec=*tv;
-    if(envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true)) {
+    const bool pairTransport=envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true);
+    // Eine verlorene Instanz: der Kern hat sie abgebaut und ist nicht mehr
+    // vorbereitet, waehrend Phase 2 hier noch als stehend gilt. Erst alles
+    // von Phase 2 abbauen, dann darf Phase 1 neu beginnen -- nach der
+    // ueblichen Wartezeit, nicht in jedem Bild.
+    if (g.ready && !g.xr.prepared()) {
+        detachXr("instance_lost");
+        g.nextXrAttemptMs = GetTickCount64() + kXrRetryMs;
+        return dd->QueuePresent(queue, pi);
+    }
+    // Phase 1 zuerst: OpenXR, Laufzeit und Headset schulden dem Stereo-Paar
+    // nichts. Ohne sie geht es nicht weiter; mit ihnen wird auf die Quelle
+    // gewartet.
+    if (!prepareXr()) return dd->QueuePresent(queue, pi);
+    if(pairTransport) {
         // The bridge is attached at layer startup; acknowledging does not need XR.
-        // Do not create a throwaway desktop-sized runtime before eye images exist.
         acknowledgeReferenceProbe();
         auto& pair=dd->referencePairImages;
-        if(!pair.width || pair.failed) return dd->QueuePresent(queue,pi);
+        if(!pair.width || pair.failed) {
+            if(pair.failed) {
+                if(g.phase!=LayerPhase::Fatal) CVR_ERR("reference.transport","pair_failed=1 -- ohne Stereo-Paar keine VR-Ausgabe; OpenXR steht");
+                setPhase(LayerPhase::Fatal);
+            } else if(g.phase!=LayerPhase::WaitingForPair) {
+                CVR_INFO("reference.source","waiting_for_first_pair=1 openxr=ready runtime=\"%s\" system=\"%s\"",
+                    g.xr.runtimeName().c_str(),g.xr.systemName().c_str());
+                setPhase(LayerPhase::WaitingForPair);
+            }
+            return dd->QueuePresent(queue,pi);
+        }
         sourceSpec.extent={pair.width,pair.height};sourceSpec.format=pair.format;
+        if(!g.pairAnnounced) {
+            g.pairAnnounced=true;
+            CVR_INFO("reference.source","first_pair size=%ux%u format=%s",pair.width,pair.height,vkFormatName(pair.format));
+            setPhase(LayerPhase::PairKnown);
+        }
         if(g.ready && (g.interop.width()!=pair.width || g.interop.height()!=pair.height || dxgiToVk(g.interop.format())!=pair.format)) {
             pair.failed=true;
             CVR_ERR("reference.transport","source_changed_restart_required=1");
             return dd->QueuePresent(queue,pi);
         }
     }
-    if (!lazyInit(dd, sourceSpec)) return dd->QueuePresent(queue, pi);
+    if (!attachXr(dd, sourceSpec)) return dd->QueuePresent(queue, pi);
+    if (g.phase != LayerPhase::Running && g.xr.state() == XrState::SessionRunning) setPhase(LayerPhase::Running);
     acknowledgeReferenceProbe();
     if(referenceProbeEnabled()) { std::lock_guard<std::mutex> lk(g_mtx); dd->referenceSnapshots.dump(dd->vk,queue); }
     if(envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true)) return presentReferencePair(dd,queue,pi);
@@ -914,7 +1133,12 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
 
     // XR-Frame oeffnen, falls noetig
     if (!g.xr.frameActive()) {
-        if (!g.xr.pollEvents()) { CVR_WARN("present", "xr=stop"); g.stopped = true; return dd->QueuePresent(queue, pi); }
+        if (!g.xr.pollEvents()) {
+            // Eine verlorene Instanz ist kein Ende: der naechste Present baut
+            // Phase 2 ab und laesst Phase 1 neu beginnen.
+            if (!g.xr.prepared()) return dd->QueuePresent(queue, pi);
+            CVR_WARN("present", "xr=stop"); g.stopped = true; return dd->QueuePresent(queue, pi);
+        }
         if (g.xr.state() != XrState::SessionRunning) return dd->QueuePresent(queue, pi);
         if (!g.xr.beginFrame()) return dd->QueuePresent(queue, pi);
         g.guestFramesInXrFrame = 0;
@@ -1187,13 +1411,21 @@ VKAPI_ATTR void VKAPI_CALL DestroySwapchainKHR(VkDevice device, VkSwapchainKHR s
         }
     }
     if (wasTv) {
-        CVR_INFO("swapchain", "tv destroyed -- VR-Ausgabe wird beendet");
-        // Das Profil ueberlebt einen reinen Swapchain-Neuaufbau. Es wird erst
-        // beim Titelwechsel oder beim Abbau des Geraets entladen.
-        teardown(false);
-        g.initTried = false;      // ein neuer TV darf neu aufbauen
-        g.tornDown = false;
-        g.failed = false;
+        // Cemu legt beim Start eine Swapchain an und ersetzt sie sofort wieder.
+        // OpenXR (Phase 1) bleibt davon unberuehrt: Laufzeit und Headset gehen
+        // nicht verloren, nur weil der Fernseher neu gebaut wird. Das Profil
+        // ueberlebt ebenfalls; es wird erst beim Abbau des Geraets entladen.
+        if (envFlag("CEMUVR_REFERENCE_PAIR_TRANSPORT",true)) {
+            // Die Quelle ist das Stereo-Paar, nicht der Fernseher: auch Phase 2
+            // bleibt stehen. Nur ein offenes XR-Bild wird geschlossen.
+            CVR_INFO("swapchain", "tv destroyed -- VR-Ausgabe bleibt, Quelle ist das Stereo-Paar");
+            closeXrFrameIfOpen();
+        } else {
+            // Der Fernseherweg: seine Bildgroesse ist die des Fernsehers, also
+            // wird Phase 2 kontrolliert neu aufgebaut, Phase 1 nicht.
+            CVR_INFO("swapchain", "tv destroyed -- Bildweg wird mit dem neuen Fernseher neu aufgebaut");
+            detachXr("tv_swapchain_rebuild");
+        }
         g.stopped = false;
     }
     if (dd) dd->DestroySwapchain(device, sc, alloc);

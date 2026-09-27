@@ -28,7 +28,7 @@ $packs = @('Mario3DWorld_VR', 'Mario3DWorld_FPS')
 $legacyPacks = @('Mario3DWorld_VR_FirstPerson')
 $defaultPreset = '120 FPS (60 Hz gameplay)'
 $stereoPack = 'Mario3DWorld_VR'
-$modeName = 'Diorama / First Person (R3)'
+$modeName = 'Diorama / Close / First Person (R3)'
 
 function Say([string] $text) { Write-Host $text }
 
@@ -54,7 +54,7 @@ function IsOurEntry($entry) {
 }
 
 Say ''
-Say ('Super Mario 3D World VR - Alpha 1.1 - ' + $modeName)
+Say ('Super Mario 3D World VR - Alpha 1.3 - ' + $modeName)
 Say '-------------------------------------'
 
 # --- the package itself -----------------------------------------------------
@@ -198,7 +198,7 @@ if ($env:VR_KEEP_OTHER_LAYERS -ne '1') { $env:VK_LOADER_LAYERS_DISABLE = '~impli
 
 Say ''
 Say 'Starting Cemu with the VR layer. Put the headset on.'
-Say 'Starts in Diorama. Click R3 in a level to switch to First Person and back.'
+Say 'Starts in Diorama. Click R3 in a level to step to the close diorama, to First Person and back.'
 Say 'This window stays open until you quit Cemu, then it tidies up.'
 Say ''
 $cemu = Start-Process -FilePath $cemuExe -WorkingDirectory $cemuDir -PassThru
