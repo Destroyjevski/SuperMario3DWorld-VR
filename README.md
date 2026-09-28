@@ -29,6 +29,8 @@ framing for the opening cinematic.
 
 - SteamVR compatibility fix by **Anakins** for runtimes that select an sRGB
   swapchain, including the matching HUD texture import.
+- Converts eye and HUD colours when the runtime requires sRGB; keeps the
+  existing UNORM transfer unchanged. Headset comparison is pending.
 - Existing camera modes and controls are unchanged.
 
 See [release notes](RELEASE_NOTES.md) and [known issues](KNOWN-ISSUES.md)

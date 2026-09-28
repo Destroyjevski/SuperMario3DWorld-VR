@@ -15,7 +15,7 @@
 //   D3D11 erzeugt die Textur  (SHARED_NTHANDLE | SHARED_KEYEDMUTEX)
 //     -> CreateSharedHandle
 //       -> Vulkan importiert sie als VkImage (D3D11_TEXTURE-Handle)
-//         -> vkCmdCopyImage aus Cemus Swapchainbild hinein
+//         -> vkCmdCopyImage (oder farbcodierender Blit bei UNORM -> sRGB)
 //           -> Keyed Mutex uebergibt an D3D11
 //             -> CopyResource in die OpenXR-Swapchain
 //
@@ -57,6 +57,7 @@ struct VkFns {
     PFN_vkResetCommandBuffer                ResetCommandBuffer{nullptr};
     PFN_vkCmdPipelineBarrier                CmdPipelineBarrier{nullptr};
     PFN_vkCmdCopyImage                      CmdCopyImage{nullptr};
+    PFN_vkCmdBlitImage                      CmdBlitImage{nullptr};
     PFN_vkQueueSubmit                       QueueSubmit{nullptr};
     PFN_vkQueueWaitIdle                     QueueWaitIdle{nullptr};
     PFN_vkCreateFence                       CreateFence{nullptr};
@@ -104,6 +105,8 @@ public:
     // vkQueuePresentKHR als Wartesemaphore uebergibt. Damit haengt die Kopie
     // zwischen Cemus Rendern und Cemus Praesentation -- ohne CPU-Stillstand und
     // ohne vkDeviceWaitIdle.
+    // sourceFormat opts reference-eye/HUD images into UNORM -> sRGB encoding.
+    // UNDEFINED preserves the legacy raw-copy path.
     bool copyFromSwapchainImage(const VulkanCtx& vk,
                                 int eye,
                                 VkImage srcImage,
@@ -111,7 +114,8 @@ public:
                                 const VkSemaphore* waitSems, uint32_t waitCount,
                                 VkSemaphore* signalSemOut,
                                 int32_t srcOffsetX = 0, int32_t srcOffsetY = 0,
-                                VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                                VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                VkFormat sourceFormat = VK_FORMAT_UNDEFINED);
 
     // Schritt 4: die D3D11-Seite uebernimmt. Blockt, bis die Vulkan-Kopie
     // fertig ist. Rueckgabe false = Zeitueberschreitung, Auge nicht benutzbar.
@@ -159,6 +163,8 @@ private:
     VkFormat m_vkFmt{VK_FORMAT_UNDEFINED};
     VkExternalMemoryHandleTypeFlagBits m_handleType{
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT};
+    VkFormat m_checkedColorSource{VK_FORMAT_UNDEFINED};
+    bool m_colorTransferChecked{false};
     bool m_vulkanReady{false};
     bool m_keyedMutex{false};
 };

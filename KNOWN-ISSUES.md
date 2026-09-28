@@ -48,8 +48,8 @@ by default.
 The primary tested setup uses Cemu 2.6, the European base game v0 and
 Virtual Desktop/VDXR. SteamVR/PSVR2 testing of the format fix has produced an
 image, but a tester reported darker, more saturated colours compared with
-Quest 3. The cause has not been established, and colour parity is not yet
-validated. Other game revisions, emulator versions, runtimes and hardware
+Quest 3. A format-dependent colour-encoding correction is now included;
+GPU checks pass, but visual colour parity between runtimes is not yet validated. Other game revisions, emulator versions, runtimes and hardware
 may behave differently.
 
 ## Reporting a problem

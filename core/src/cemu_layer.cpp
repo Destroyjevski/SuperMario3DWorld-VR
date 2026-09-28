@@ -954,7 +954,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
         VkSemaphore signal{};
         // Diagnostic view translation: source eye 1 is physically left.
         copied[eye]=g.interop.copyFromSwapchainImage(dd->vk,eye,pairs.images[slot*2+(1-eye)].handle,
-            pairs.width,pairs.height,next.pWaitSemaphores,next.waitSemaphoreCount,&signal,0,0,VK_IMAGE_LAYOUT_GENERAL);
+            pairs.width,pairs.height,next.pWaitSemaphores,next.waitSemaphoreCount,&signal,0,0,VK_IMAGE_LAYOUT_GENERAL,pairs.format);
         if(!copied[eye])break;
         last=signal;next.waitSemaphoreCount=1;next.pWaitSemaphores=&last;
     }
@@ -970,7 +970,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
         if(hi.vulkanReady() && !hud.hud.failed) {
             VkSemaphore signal{};
             hudCopied=hi.copyFromSwapchainImage(dd->vk,0,hud.hud.images[slot*2].handle,pairs.width,pairs.height,
-                next.pWaitSemaphores,next.waitSemaphoreCount,&signal,0,0,VK_IMAGE_LAYOUT_GENERAL);
+                next.pWaitSemaphores,next.waitSemaphoreCount,&signal,0,0,VK_IMAGE_LAYOUT_GENERAL,hud.hud.format);
             if(hudCopied){last=signal;next.waitSemaphoreCount=1;next.pWaitSemaphores=&last;}
         }
     }
@@ -1732,6 +1732,7 @@ VKAPI_ATTR VkResult VKAPI_CALL LayerCreateDevice(VkPhysicalDevice phys,
     f.ResetCommandBuffer           = (PFN_vkResetCommandBuffer)nextGdpa(*out, "vkResetCommandBuffer");
     f.CmdPipelineBarrier           = (PFN_vkCmdPipelineBarrier)nextGdpa(*out, "vkCmdPipelineBarrier");
     f.CmdCopyImage                 = (PFN_vkCmdCopyImage)nextGdpa(*out, "vkCmdCopyImage");
+    f.CmdBlitImage                 = (PFN_vkCmdBlitImage)nextGdpa(*out, "vkCmdBlitImage");
     f.QueueSubmit                  = (PFN_vkQueueSubmit)nextGdpa(*out, "vkQueueSubmit");
     f.QueueWaitIdle                = (PFN_vkQueueWaitIdle)nextGdpa(*out, "vkQueueWaitIdle");
     f.CreateFence                  = (PFN_vkCreateFence)nextGdpa(*out, "vkCreateFence");

@@ -1,5 +1,6 @@
 // CemuVR -- Vulkan/D3D11-Interop, Implementierung.
 #include "cemuvr/interop.h"
+#include "cemuvr/color_transfer.h"
 #include "cemuvr/diag.h"
 
 #include <cstring>
@@ -92,6 +93,7 @@ EyeInterop::~EyeInterop() {
 bool EyeInterop::createD3D11Side(ID3D11Device* d3d, uint32_t w, uint32_t h, DXGI_FORMAT fmt) {
     if (!d3d || !w || !h) return false;
     m_w = w; m_h = h; m_fmt = fmt;
+    m_colorTransferChecked = false;
 
     D3D11_TEXTURE2D_DESC td{};
     td.Width = w;
@@ -268,15 +270,40 @@ bool EyeInterop::copyFromSwapchainImage(const VulkanCtx& vk,
                                         uint32_t srcW, uint32_t srcH,
                                         const VkSemaphore* waitSems, uint32_t waitCount,
                                         VkSemaphore* signalSemOut,
-                                        int32_t srcOffsetX, int32_t srcOffsetY, VkImageLayout sourceLayout) {
+                                        int32_t srcOffsetX, int32_t srcOffsetY, VkImageLayout sourceLayout,
+                                        VkFormat sourceFormat) {
     if (!m_vulkanReady || eye < 0 || eye > 1 || srcImage == VK_NULL_HANDLE) return false;
 
-    // Keine Skalierung. vkCmdCopyImage kann nicht skalieren, und es soll auch
-    // nicht -- abweichende Groesse ist ein Fehler, kein Anlass zum Umrechnen.
+    // Keine Skalierung, auch beim sRGB-Blit: abweichende Groesse ist ein
+    // Fehler, kein Anlass zum Umrechnen.
     if (srcW != m_w || srcH != m_h) {
         CVR_ERR("copy.mismatch", "reason=size srcW=%u srcH=%u dstW=%u dstH=%u",
                 srcW, srcH, m_w, m_h);
         return false;
+    }
+
+    // Only explicit reference-eye/HUD sources opt in. Legacy presentation
+    // keeps its existing raw-copy semantics (unspecified source format).
+    const bool encodeSrgb = needsSrgbEncoding(sourceFormat, m_vkFmt);
+    if (!m_colorTransferChecked || m_checkedColorSource != sourceFormat) {
+        if (encodeSrgb) {
+            VkFormatProperties src{}, dst{};
+            if (!vk.fn.CmdBlitImage || !vk.fn.GetPhysicalDeviceFormatProperties) {
+                CVR_ERR("interop.color", "srgb_encoding_unavailable=1");
+                return false;
+            }
+            vk.fn.GetPhysicalDeviceFormatProperties(vk.phys, sourceFormat, &src);
+            vk.fn.GetPhysicalDeviceFormatProperties(vk.phys, m_vkFmt, &dst);
+            if (!(src.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+                !(dst.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+                CVR_ERR("interop.color", "srgb_blit_unsupported=1 source=%u destination=%u", sourceFormat, m_vkFmt);
+                return false;
+            }
+        }
+        CVR_INFO("interop.color", "source=%u destination=%u transfer=%s", sourceFormat, m_vkFmt,
+                 encodeSrgb ? "linear_to_srgb" : "byte_copy");
+        m_checkedColorSource = sourceFormat;
+        m_colorTransferChecked = true;
     }
 
     Slot& s = m_slot[m_nextSlot];
@@ -340,7 +367,7 @@ bool EyeInterop::copyFromSwapchainImage(const VulkanCtx& vk,
 
     // Ein vom Spielprofil gewuenschter Quellversatz verschiebt den kopierten
     // AUSSCHNITT. Er ist ganzzahlig in Texeln, deshalb bleibt es eine reine
-    // Texelkopie: es wird nichts neu abgetastet und nichts erfunden. Der Betrag
+    // Zuordnung der Texel, auch beim farbcodierenden Blit. Der Betrag
     // wird auf ein Viertel der Kantenlaenge begrenzt.
     const int32_t maxX = (int32_t)(m_w / 4), maxY = (int32_t)(m_h / 4);
     int32_t dx = srcOffsetX, dy = srcOffsetY;
@@ -364,10 +391,8 @@ bool EyeInterop::copyFromSwapchainImage(const VulkanCtx& vk,
                   region.srcOffset.x, region.srcOffset.y,
                   region.dstOffset.x, region.dstOffset.y,
                   region.extent.width, region.extent.height);
-    vk.fn.CmdCopyImage(s.cb,
-                       srcImage,          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       m_eye[eye].image,  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &region);
+    recordColorTransfer(vk.fn.CmdCopyImage, vk.fn.CmdBlitImage, s.cb,
+                        srcImage, m_eye[eye].image, region, encodeSrgb);
 
     // Zurueck: Swapchainbild nach PRESENT_SRC, Augenressource nach GENERAL
     // (das Layout, in dem D3D11 sie lesen darf).

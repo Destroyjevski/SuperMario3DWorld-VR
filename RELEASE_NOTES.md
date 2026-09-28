@@ -4,13 +4,16 @@
 
 - Integrates Anakins' fix for a black or waiting screen on SteamVR runtimes
   that offer an sRGB swapchain instead of the requested UNORM format.
+- Converts eye and HUD colours when the runtime requires sRGB; keeps the
+  existing UNORM transfer unchanged. Headset comparison is pending.
 - Imports the HUD's shared texture using the format selected by OpenXR.
 - Keeps the current start-up and runtime-recovery behavior, with resolution
   and colour-channel-order checks still in place.
 
-A SteamVR/PSVR2 tester now gets an image, but reported darker, more saturated
-colours compared with Quest 3. That visual difference is still under
-investigation; this release does not claim to resolve it.
+Earlier SteamVR testing produced an image with darker, more saturated
+colours. This candidate adds the missing UNORM-to-sRGB encoding at the
+runtime format transition. GPU colour-ramp checks pass; visual comparison
+in SteamVR and VDXR is still pending.
 
 Camera modes, controls and game-version requirements are unchanged.
 
