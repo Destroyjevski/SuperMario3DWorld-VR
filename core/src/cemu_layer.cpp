@@ -276,6 +276,18 @@ bool isBgra(DXGI_FORMAT f) {
     return f == DXGI_FORMAT_B8G8R8A8_UNORM || f == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
 }
 
+// Adapted from Anakins' SteamVR fix (SuperMario3DWorld-VR PR #2).
+// UNORM and SRGB variants have identical texel layouts: vkCmdCopyImage
+// preserves their bytes. Channel order must still match.
+VkFormat texelBase(VkFormat f) {
+    switch (f) {
+        case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
+        case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
+        default: return f;
+    }
+}
+bool sameTexelLayout(VkFormat a, VkFormat b) { return texelBase(a) == texelBase(b); }
+
 // Bevorzugtes OpenXR-Format zu Cemus Swapchainformat: gleiche Kanalreihenfolge,
 // sRGB-Variante bevorzugt (der Compositor erwartet sRGB, und Cemus fertiges
 // Bild traegt bereits gammakodierte Werte -- die Umdeutung ist genau richtig
@@ -930,7 +942,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
     const int slot=pairs.order.latest();
     if(slot<0 || pairs.failed) return dd->QueuePresent(queue,pi);
     if(queue!=dd->vk.queue || !dd->vk.keyedMutex || pairs.width!=g.interop.width() ||
-       pairs.height!=g.interop.height() || pairs.format!=dxgiToVk(g.interop.format())) {
+       pairs.height!=g.interop.height() || !sameTexelLayout(pairs.format,dxgiToVk(g.interop.format()))) {
         pairs.failed=true;CVR_ERR("reference.transport","queue_format_size_or_mutex_mismatch=1");
         return dd->QueuePresent(queue,pi);
     }
@@ -953,7 +965,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
         auto& hi=dd->hudInterop;
         if(!hi.width()) {
             if(!hi.createD3D11Side(g.xr.device(),pairs.width,pairs.height,g.interop.format()) ||
-               !hi.importIntoVulkan(dd->vk,pairs.format))hud.hud.failed=true;
+               !hi.importIntoVulkan(dd->vk,dxgiToVk(g.interop.format())))hud.hud.failed=true;
         }
         if(hi.vulkanReady() && !hud.hud.failed) {
             VkSemaphore signal{};
@@ -1103,7 +1115,7 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
             CVR_INFO("reference.source","first_pair size=%ux%u format=%s",pair.width,pair.height,vkFormatName(pair.format));
             setPhase(LayerPhase::PairKnown);
         }
-        if(g.ready && (g.interop.width()!=pair.width || g.interop.height()!=pair.height || dxgiToVk(g.interop.format())!=pair.format)) {
+        if(g.ready && (g.interop.width()!=pair.width || g.interop.height()!=pair.height || !sameTexelLayout(dxgiToVk(g.interop.format()),pair.format))) {
             pair.failed=true;
             CVR_ERR("reference.transport","source_changed_restart_required=1");
             return dd->QueuePresent(queue,pi);
