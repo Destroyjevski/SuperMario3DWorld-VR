@@ -34,6 +34,14 @@ This project is independent; no endorsement by Crementif or BetterVR is claimed.
 
 Thanks to JShodanVR for putting the early builds through their paces and sharing a lot of useful feedback and footage.
 
+## Community contributions
+
+Thanks to **[Anakins](https://github.com/Anakins)** for identifying the
+SteamVR swapchain-format mismatch and contributing the UNORM/sRGB
+compatibility and HUD texture-import fix in
+[SuperMario3DWorld-VR PR #2](https://github.com/Destroyjevski/SuperMario3DWorld-VR/pull/2).
+The fix is integrated with the current OpenXR start-up and recovery code.
+
 ## Other components
 
 - **Khronos OpenXR loader** — Apache 2.0; notice in

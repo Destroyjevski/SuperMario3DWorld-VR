@@ -16,3 +16,7 @@ on how that loader was built.
 Vulkan headers and Windows SDK/D3D11 system libraries are build dependencies.
 The community Super Mario 3D World resolution graphic pack by Crementif and
 getdls is used in the documented setup but is not redistributed here.
+
+Anakins contributed the SteamVR UNORM/sRGB compatibility and HUD import fix
+through SuperMario3DWorld-VR PR #2 under this project's MIT license.
+See CREDITS.md for attribution and the upstream contribution link.

@@ -1,6 +1,6 @@
 # Known issues
 
-**Alpha 1.3** is intended for early testing. A full playthrough has not
+**Alpha 1.4** is intended for early testing. A full playthrough has not
 been validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 
 ## Shadows
@@ -45,9 +45,12 @@ by default.
 
 ## Compatibility
 
-Only Cemu 2.6, the European base game v0 and Virtual Desktop/VDXR have been
-validated. Other game revisions, emulator versions, runtimes and hardware may
-behave differently.
+The primary tested setup uses Cemu 2.6, the European base game v0 and
+Virtual Desktop/VDXR. SteamVR/PSVR2 testing of the format fix has produced an
+image, but a tester reported darker, more saturated colours compared with
+Quest 3. The cause has not been established, and colour parity is not yet
+validated. Other game revisions, emulator versions, runtimes and hardware
+may behave differently.
 
 ## Reporting a problem
 

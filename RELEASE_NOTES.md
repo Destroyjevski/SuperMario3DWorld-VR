@@ -1,3 +1,24 @@
+# Alpha 1.4
+
+## SteamVR compatibility
+
+- Integrates Anakins' fix for a black or waiting screen on SteamVR runtimes
+  that offer an sRGB swapchain instead of the requested UNORM format.
+- Imports the HUD's shared texture using the format selected by OpenXR.
+- Keeps the current start-up and runtime-recovery behavior, with resolution
+  and colour-channel-order checks still in place.
+
+A SteamVR/PSVR2 tester now gets an image, but reported darker, more saturated
+colours compared with Quest 3. That visual difference is still under
+investigation; this release does not claim to resolve it.
+
+Camera modes, controls and game-version requirements are unchanged.
+
+See [CREDITS.md](CREDITS.md) for the contribution and
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) for remaining limitations.
+
+---
+
 # Alpha 1.3
 
 An early alpha release. The changes below build on Alpha 1.2.
