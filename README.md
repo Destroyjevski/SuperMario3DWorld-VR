@@ -30,8 +30,17 @@ framing for the opening cinematic.
 - SteamVR compatibility fix by **Anakins** for runtimes that select an sRGB
   swapchain, including the matching HUD texture import.
 - Converts eye and HUD colours when the runtime requires sRGB; keeps the
-  existing UNORM transfer unchanged. Headset comparison is pending.
-- Existing camera modes and controls are unchanged.
+  existing UNORM transfer unchanged.
+- Adds **USA v1** support alongside **European v0** in both graphic packs.
+- First-person movement follows your horizontal head direction, with light
+  smoothing. Works with both gamepads and VR controllers; no extra button.
+- Improves visibility on the world maps: hides distant pipes and separate
+  bonus-map planes, with their associated objects and effects.
+- Hides the detached room beside World 2, including the pipe transition
+  from World 1, and corrects visibility of the remote bonus room in the first level.
+- Removes the distracting cyan screen flare in the first level.
+- Presents the title confirmation and file-selection transition on the
+  menu canvas instead of over the surrounding VR scene.
 
 See [release notes](RELEASE_NOTES.md) and [known issues](KNOWN-ISSUES.md)
 for test coverage and remaining limitations.
@@ -75,13 +84,15 @@ See [INSTALL.md](INSTALL.md) for headset setup, graphics settings and FPS option
 | --- | --- |
 | System | Windows x64 |
 | Emulator | Cemu **2.6**, Vulkan renderer |
-| Game | European Wii U base game **v0**, without an update |
-| Game identifiers | Title ID `0005000010145D00` · module checksum `D2308838` |
+| Game | European Wii U **v0** or USA **v1** |
+| European identifiers | Title ID `0005000010145D00` · module checksum `D2308838` |
+| USA identifiers | Title ID `0005000010145C00` · module checksum `BBAF1908` |
 | VR | An active OpenXR headset runtime |
 | Input | A configured gamepad or supported OpenXR VR controllers; emulated controller 1 must be a Wii U GamePad |
 
 Headset testing used an RTX 4080 and Virtual Desktop/VDXR at 120 Hz.
-Other hardware, runtimes and game versions have not been validated.
+The USA module was checked against the European module; broader headset and
+hardware testing is still limited. Other game revisions are not yet supported.
 Cemu and the game are not included.
 
 ## Controls
@@ -114,9 +125,10 @@ for the full Quest/Touch layout. These bindings are separate from the gamepad's.
 ### Camera behaviour with either input device
 
 Head movement controls your viewpoint in VR. In first person, the right stick
-turns freely through 360 degrees and the left stick moves relative to that
-stick-turned view. The HUD stays in the room as you turn; head tracking
-remains separate from stick turning.
+turns freely through 360 degrees. The left stick moves relative to your
+horizontal head direction combined with that stick turning, with light
+smoothing and unchanged movement speed. Looking up/down or tilting your head
+does not steer movement. The HUD stays in the room as you turn.
 
 ## Frame rate
 

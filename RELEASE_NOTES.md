@@ -1,24 +1,45 @@
 # Alpha 1.4
 
-## SteamVR compatibility
+## OpenXR compatibility and colours
 
-- Integrates Anakins' fix for a black or waiting screen on SteamVR runtimes
+- Integrates Anakins' swapchain-format and HUD texture-import fix for runtimes
   that offer an sRGB swapchain instead of the requested UNORM format.
-- Converts eye and HUD colours when the runtime requires sRGB; keeps the
-  existing UNORM transfer unchanged. Headset comparison is pending.
-- Imports the HUD's shared texture using the format selected by OpenXR.
-- Keeps the current start-up and runtime-recovery behavior, with resolution
-  and colour-channel-order checks still in place.
+- Corrects eye and HUD colour transfer when the runtime requires sRGB,
+  addressing the darker, oversaturated image. The existing UNORM path is preserved.
+- Retains the current OpenXR start-up and recovery behaviour.
 
-Earlier SteamVR testing produced an image with darker, more saturated
-colours. This candidate adds the missing UNORM-to-sRGB encoding at the
-runtime format transition. GPU colour-ramp checks pass; visual comparison
-in SteamVR and VDXR is still pending.
+## USA support
 
-Camera modes, controls and game-version requirements are unchanged.
+- Both the VR and FPS graphic packs now support USA v1 as well as European v0.
+- Supported modules: European `D2308838` and USA `BBAF1908`. The code, data and
+  relocation layouts were compared before enabling the USA module.
 
-See [CREDITS.md](CREDITS.md) for the contribution and
-[KNOWN-ISSUES.md](KNOWN-ISSUES.md) for remaining limitations.
+## First-person movement
+
+- Left-stick movement follows your horizontal head direction combined with
+  right-stick turning. Light smoothing softens small heading changes without
+  changing movement speed. Looking up/down and head tilt do not steer movement.
+- Enabled automatically in first-person gameplay with a gamepad or VR
+  controllers. Diorama, world-map and menu movement retain their existing behaviour.
+
+## Visibility and transitions
+
+- Hides distant pipes and route details that appeared above the World 1 map.
+- Separates the bonus-world map planes and filters associated foreign models
+  and particle effects while retaining neighbouring areas on the current plane.
+- Hides the detached room beside World 2 and during pipe travel from World 1;
+  retains it when entering its own area.
+- Corrects visibility of the remote bonus room in the first level, preventing
+  it from being brought into view solely by the expanded VR visibility test.
+- Removes the distracting cyan screen flare in the first level.
+- Moves title confirmation and file-selection transitions onto the complete
+  menu canvas so the iris effect is presented with its scene.
+
+All three camera modes, VR-controller bindings, the D-pad gesture, selectable
+mode-switch button, stereo-lighting corrections and FPS options are retained.
+
+See [CREDITS.md](CREDITS.md) for contributions and
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) for current limitations.
 
 ---
 

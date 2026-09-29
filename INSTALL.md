@@ -2,8 +2,8 @@
 
 ## Before you start
 
-- Set up Cemu 2.6 and confirm that your European Super Mario 3D World base
-  game v0 runs normally with a gamepad.
+- Set up Cemu 2.6 and confirm that your European v0 or USA v1 copy of
+  Super Mario 3D World runs normally with a gamepad.
 - Select an OpenXR runtime for your headset. The tested runtime is Virtual
   Desktop/VDXR.
 - For the default 120 FPS preset, use a 120 Hz headset refresh rate.
@@ -87,8 +87,10 @@ VR stick does not override the gamepad stick.
 ### Camera behaviour with either input device
 
 Head tracking works with either control option. In first person, right-stick
-left/right turns through 360 degrees, and movement follows the stick-turned
-view. These camera behaviours do not change the gamepad's button assignments.
+left/right turns through 360 degrees. Left-stick movement follows your horizontal
+head direction combined with stick turning, with light smoothing and unchanged
+speed. Looking up/down and head tilt do not steer movement. This is automatic
+in first person and does not add or change any button assignments.
 
 ## Switching camera modes
 

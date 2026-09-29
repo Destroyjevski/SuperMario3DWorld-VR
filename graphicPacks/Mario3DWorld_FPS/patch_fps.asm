@@ -1,5 +1,5 @@
-[MarioFPS_EUv0]
-moduleMatches = 0xD2308838
+[MarioFPS_EUv0_USv1]
+moduleMatches = 0xD2308838,0xBBAF1908
 .origin = codecave
 mfTelemetry:
 .int 0x4D465053

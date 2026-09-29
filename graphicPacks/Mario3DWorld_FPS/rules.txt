@@ -1,8 +1,8 @@
 [Definition]
-titleIds = 0005000010145D00
-name = FPS Unlock - 60 Hz gameplay (EU v0 only)
+titleIds = 0005000010145D00,0005000010145C00
+name = FPS Unlock - 60 Hz gameplay
 path = "Super Mario 3D World/Mods/FPS Unlock"
-description = Experimental: higher render rate, native 60 Hz simulation. EU v0 D2308838 only. No motion interpolation. See release notes.
+description = Experimental: higher render rate, native 60 Hz simulation. EUR v0 and USA v1. No motion interpolation. See release notes.
 version = 7
 
 [Default]

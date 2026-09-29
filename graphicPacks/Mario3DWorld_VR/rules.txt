@@ -1,8 +1,8 @@
 [Definition]
-titleIds = 0005000010145D00
+titleIds = 0005000010145D00,0005000010145C00
 name = Super Mario 3D World VR
 path = "Super Mario 3D World/VR"
-description = Stereo VR with head tracking, VR controllers as the pad, and a selectable button that cycles diorama, a closer diorama at half distance, and first person. EUR v0.
+description = Stereo VR with head tracking, VR controllers as the pad, and a selectable button that cycles diorama, a closer diorama at half distance, and first person. EUR v0 and USA v1.
 version = 7
 
 # 131072 = right stick click, 262144 = left stick click, 192 = ZL+ZR held
