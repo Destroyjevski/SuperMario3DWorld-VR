@@ -54,7 +54,7 @@ function IsOurEntry($entry) {
 }
 
 Say ''
-Say ('Super Mario 3D World VR - Alpha 1.4 - ' + $modeName)
+Say ('Super Mario 3D World VR - Alpha 1.41 - ' + $modeName)
 Say '-------------------------------------'
 
 # --- the package itself -----------------------------------------------------

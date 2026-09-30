@@ -26,7 +26,7 @@ Redistributable may be needed on the machine running the mod.
 The files under `graphicPacks/` are assembled by Cemu when it starts the game.
 No game executable is required to compile the C++ layer.
 
-## Package Alpha 1.4
+## Package Alpha 1.41
 
 ```powershell
 python tools/package.py --dll build/Release/cemuvr_layer.dll
@@ -39,3 +39,21 @@ contents for private paths and unexpected file types before writing archives.
 The installation ZIP includes the DLL. The source ZIP includes the C++ source,
 ASM packs, launchers and notices. Build outputs and local Cemu settings are
 excluded from Git.
+
+## Pose-token regression tests
+
+Configure with `-DCEMUVR_BUILD_TESTS=ON`, build Release, then run:
+
+```powershell
+ctest --test-dir build -C Release --output-on-failure
+```
+
+These offline tests exercise the production history and transport-slot code,
+including token wrap, stale markers, the mailbox seqlock rollover and 24 simulated
+hours each at 60, 90, 120 and 144 Hz. They do not launch Cemu or a headset runtime.
+
+Normal sessions wrap pose tokens automatically. Each wrap emits one
+`reference.token wrap=1` record, even with periodic diagnostics disabled.
+For explicitly bounded FakeHMD/diagnostic runs only,
+`CEMUVR_REFERENCE_STRICT_TOKEN_LIMIT=1` restores the stop before token reuse.
+Leave this variable unset for normal play and long-session testing.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import zipfile
@@ -60,14 +61,17 @@ def install_files(dll: Path) -> dict[str, bytes]:
 
 
 def audit(name: str, files: dict[str, bytes]) -> None:
-    forbidden_names = re.compile(r"(?i)(\.exe$|\.rpx$|\.wud$|\.wux$|\.tik$|\.tmd$|gamedata\.bin|save|shadercache|\.pdb$)")
+    forbidden_names = re.compile(r"(?i)(\.exe$|\.rpx$|\.wud$|\.wux$|\.tik$|\.tmd$|gamedata\.bin|save|shadercache|\.pdb$|pre-push-checks\.json$)")
+    # Optional local-only denylist: JSON array of strings, never stored in the archive.
+    extra_terms = json.loads(os.environ.get("CEMUVR_PRIVACY_TERMS", "[]"))
+    if not isinstance(extra_terms, list) or any(not isinstance(t, str) or not t for t in extra_terms):
+        raise ValueError("CEMUVR_PRIVACY_TERMS must be a JSON array of nonempty strings")
     # Assemble markers in pieces so the checker can audit its own source too.
     forbidden_text = re.compile(rb"(?i)(" + b"|".join([
         rb"[A-Z]:\\(?:Users|AI|EMULATION)\\",
         b"/" + b"Users/",
         # A real path segment, not the %APPDATA% variable the instructions name.
         rb"\App" + rb"Data\\",
-        b"sv" + b"vee",
         b"gh" + rb"p_[A-Za-z0-9]+",
         b"github" + rb"_pat_[A-Za-z0-9]+",
         b"Bearer" + rb" [A-Za-z0-9]+",
@@ -75,6 +79,9 @@ def audit(name: str, files: dict[str, bytes]) -> None:
     for path, data in files.items():
         if forbidden_names.search(path):
             raise ValueError(f"Forbidden filename in {name}: {path}")
+        if any(term.encode(encoding).lower() in data.lower()
+               for term in extra_terms for encoding in ("utf-8", "utf-16-le", "utf-16-be")):
+            raise ValueError(f"Local privacy denylist match in {name}: {path}")
         if path.endswith(".dll"):
             # The binary is scanned too; it must not embed a private build path.
             if forbidden_text.search(data):
