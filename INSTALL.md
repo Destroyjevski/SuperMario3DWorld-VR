@@ -9,17 +9,23 @@
 - For the default 120 FPS preset, use a 120 Hz headset refresh rate.
 - Close Cemu before starting a VR session.
 
-## Install Alpha 1.41
+## Install Alpha 1.5
 
-1. Extract `SuperMario3DWorld-VR-Alpha-1.41-install.zip`.
+1. Extract `SuperMario3DWorld-VR-Alpha-1.5-install.zip`.
 2. Copy its **`Mario3DWorld-VR`** folder into your Cemu folder, beside `Cemu.exe`.
 3. Open that folder and run **`Start-VR.cmd`**. The game starts in diorama mode.
 4. Launch the game from Cemu's game list.
 5. Keep the launcher window open. Quit Cemu normally to end the session.
 
 If the launcher cannot find Cemu, it asks you to select `Cemu.exe` once.
+The launcher automatically uses Cemu's portable folder, settings beside
+Cemu.exe, or the standard AppData location, in that order.
 The installation ZIP includes the VR layer. The source ZIP requires a build;
 see [BUILD.md](BUILD.md).
+
+In Captain Toad levels on the European v0 game, the headlamp automatically
+follows your headset's look direction in first person. No extra button or
+setting is needed. Other camera modes keep the game's normal lamp direction.
 
 ## Graphics and frame rate
 

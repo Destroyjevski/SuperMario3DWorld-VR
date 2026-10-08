@@ -2201,6 +2201,36 @@ stfs f1, 72(r9)
 lfs f1, 24(r9)
 stfs f1, 84(r9)
 mtCameraStamp:
+; Publish the completed player view without changing camera/transport state.
+stwu r1, -0x40(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 0x44(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 12(r1)
+stw r3, 16(r1)
+stw r4, 20(r1)
+stw r5, 24(r1)
+stw r6, 28(r1)
+stw r7, 32(r1)
+stw r8, 36(r1)
+stw r11, 40(r1)
+stw r12, 44(r1)
+bl hlCaptureView
+lwz r3, 16(r1)
+lwz r4, 20(r1)
+lwz r5, 24(r1)
+lwz r6, 28(r1)
+lwz r7, 32(r1)
+lwz r8, 36(r1)
+lwz r11, 40(r1)
+lwz r12, 44(r1)
+lwz r0, 12(r1)
+.int 0x7C0FF120 ; mtcrf 255, r0
+lwz r0, 0x44(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0x40
 lis r12, rrSlot@ha
 addi r12, r12, rrSlot@l
 lwz r11, 0(r12)
@@ -17965,3 +17995,273 @@ pfEffectFilterState:
 0x0253FAB8 = bla pfEffectSubmit
 0x0253FAF4 = bla pfEffectSubmit
 0x023E3AD4 = bla pfDraw
+
+[Mario3DWorld_Headlamp_EU_v0]
+moduleMatches = 0xD2308838
+.origin = codecave
+
+; Use the completed first-person view only for the primary player's headlamp.
+; Native position, activation, brightness, range and wall collision remain intact.
+; Other executable layouts retain their native lamp until independently verified.
+hlCaptureView:
+lis r11, hlPose@ha
+addi r11, r11, hlPose@l
+lis r12, mtControl@ha
+addi r12, r12, mtControl@l
+lwz r0, 0(r12)
+cmpwi r0, 1
+bne hlCaptureInvalidate
+lis r8, mrSceneClass@ha
+lwz r0, mrSceneClass@l(r8)
+lis r8, 0x1032
+ori r8, r8, 0x86DC
+cmpw r0, r8
+bne hlCaptureInvalidate
+; Auxiliary cameras and the second eye must not replace the player view.
+cmpwi r10, 0
+bne hlCaptureDone
+lwz r0, 28(r12)
+cmpwi r0, 1
+bne hlCaptureDone
+li r0, 0
+stw r0, 0(r11)
+stw r0, 8(r11)
+lis r8, mtHideActor@ha
+lwz r7, mtHideActor@l(r8)
+lis r8, 0x1000
+cmplw r7, r8
+blt hlCaptureDone
+lis r8, 0x4FFF
+cmplw r7, r8
+bge hlCaptureDone
+andi. r0, r7, 3
+bne hlCaptureDone
+lwz r0, 0(r7)
+lis r8, 0x1031
+ori r8, r8, 0x9EF4
+cmpw r0, r8
+bne hlCaptureDone
+stw r7, 12(r11)
+; Follow the same active-model selection as the existing first-person culler.
+lwz r7, 0xFC(r7)
+lis r8, 0x1000
+cmplw r7, r8
+blt hlCaptureDone
+lis r8, 0x4FFF
+cmplw r7, r8
+bge hlCaptureDone
+andi. r0, r7, 3
+bne hlCaptureDone
+lwz r6, 0x18(r7)
+cmplwi r6, 7
+bgt hlCaptureDone
+lwz r7, 0x14(r7)
+lis r8, 0x1000
+cmplw r7, r8
+blt hlCaptureDone
+lis r8, 0x4FFF
+cmplw r7, r8
+bge hlCaptureDone
+andi. r0, r7, 3
+bne hlCaptureDone
+mulli r6, r6, 4
+add r7, r7, r6
+lwz r7, 0(r7)
+lis r8, 0x1000
+cmplw r7, r8
+blt hlCaptureDone
+lis r8, 0x4FFF
+cmplw r7, r8
+bge hlCaptureDone
+andi. r0, r7, 3
+bne hlCaptureDone
+li r6, 0
+hlSpotOwner:
+lis r8, 0x1000
+cmplw r7, r8
+blt hlSpotNextOwner
+lis r8, 0x4FFF
+cmplw r7, r8
+bge hlSpotNextOwner
+andi. r0, r7, 3
+bne hlSpotNextOwner
+lwz r8, 0x6C(r7)
+lis r5, 0x1000
+cmplw r8, r5
+blt hlSpotNextOwner
+lis r5, 0x4FFF
+cmplw r8, r5
+bge hlSpotNextOwner
+andi. r0, r8, 3
+bne hlSpotNextOwner
+lwz r0, 0x18(r8)
+cmpw r0, r7
+bne hlSpotNextOwner
+; The captain has one spotlight and one point light. Do not steer the latter.
+lwz r0, 0(r8)
+cmpwi r0, 2
+bne hlSpotNextOwner
+lwz r4, 8(r8)
+lis r5, 0x1000
+cmplw r4, r5
+blt hlSpotNextOwner
+lis r5, 0x4FFF
+cmplw r4, r5
+bge hlSpotNextOwner
+andi. r0, r4, 3
+bne hlSpotNextOwner
+li r3, 0
+hlSpotScan:
+lwz r8, 0(r4)
+lis r5, 0x1000
+cmplw r8, r5
+blt hlSpotScanNext
+lis r5, 0x4FFF
+cmplw r8, r5
+bge hlSpotScanNext
+andi. r0, r8, 3
+bne hlSpotScanNext
+lwz r0, 0(r8)
+lis r5, 0x1036
+ori r5, r5, 0xEAA4
+cmpw r0, r5
+bne hlSpotScanNext
+; Authored headlamp offset (0,80,0) and rotation (-90,0,0).
+lwz r0, 0x2C(r8)
+cmpwi r0, 0
+bne hlSpotScanNext
+lwz r0, 0x30(r8)
+lis r5, 0x42A0
+cmpw r0, r5
+bne hlSpotScanNext
+lwz r0, 0x34(r8)
+cmpwi r0, 0
+bne hlSpotScanNext
+lwz r0, 0x38(r8)
+lis r5, 0xC2B4
+cmpw r0, r5
+bne hlSpotScanNext
+lwz r0, 0x3C(r8)
+cmpwi r0, 0
+bne hlSpotScanNext
+lwz r0, 0x40(r8)
+cmpwi r0, 0
+bne hlSpotScanNext
+; Ambiguous identity leaves all lights native.
+lwz r0, 8(r11)
+cmpwi r0, 0
+bne hlCaptureInvalidate
+stw r8, 8(r11)
+hlSpotScanNext:
+addi r4, r4, 4
+addi r3, r3, 1
+cmpwi r3, 2
+blt hlSpotScan
+lwz r0, 8(r11)
+cmpwi r0, 0
+bne hlCaptureCommit
+hlSpotNextOwner:
+cmpwi r6, 1
+beq hlCaptureDone
+li r6, 1
+lwz r7, 12(r11)
+b hlSpotOwner
+hlCaptureCommit:
+lis r12, mtHideModel@ha
+addi r12, r12, mtHideModel@l
+lwz r0, 12(r12)
+stw r0, 4(r11)
+; View row 2 is minus world forward, including head yaw/pitch and rig yaw.
+; Native collision and light submission both negate this direction once.
+lwz r0, 32(r9)
+stw r0, 16(r11)
+lwz r0, 36(r9)
+stw r0, 20(r11)
+lwz r0, 40(r9)
+stw r0, 24(r11)
+li r0, 1
+stw r0, 0(r11)
+hlCaptureDone:
+blr
+hlCaptureInvalidate:
+li r0, 0
+stw r0, 0(r11)
+stw r0, 8(r11)
+blr
+hlPose:
+.int 0 ; valid
+.int 0 ; scene calculation epoch
+.int 0 ; current player spotlight identity (never dereferenced by the hook)
+.int 0 ; primary player identity
+.int 0 ; negative forward x
+.int 0 ; negative forward y
+.int 0 ; negative forward z
+
+; After the native joint direction is extracted, before collision and submit.
+; Replace only the three call-local direction words, not the animated skeleton.
+0x02476E6C = bla hlSpotDirection
+hlSpotDirection:
+stwu r1, -0x20(r1)
+stw r0, 8(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 12(r1)
+stw r5, 16(r1)
+stw r11, 20(r1)
+stw r12, 24(r1)
+lis r11, hlPose@ha
+addi r11, r11, hlPose@l
+lwz r0, 0(r11)
+cmpwi r0, 1
+bne hlSpotReturn
+lwz r0, 8(r11)
+cmpw r0, r31
+bne hlSpotReturn
+lis r12, rrEnabled@ha
+lwz r0, rrEnabled@l(r12)
+cmpwi r0, 0
+beq hlSpotReturn
+lis r12, mtControl@ha
+lwz r0, mtControl@l(r12)
+cmpwi r0, 1
+bne hlSpotReturn
+lis r12, mrSceneClass@ha
+lwz r0, mrSceneClass@l(r12)
+lis r5, 0x1032
+ori r5, r5, 0x86DC
+cmpw r0, r5
+bne hlSpotReturn
+lis r12, mtHideActor@ha
+lwz r0, mtHideActor@l(r12)
+lwz r5, 12(r11)
+cmpw r0, r5
+bne hlSpotReturn
+lis r12, mtHideModel@ha
+addi r12, r12, mtHideModel@l
+lwz r0, 12(r12)
+lwz r5, 4(r11)
+subf r5, r5, r0
+cmplwi r5, 1
+bgt hlSpotReturn
+; Native stack +0x34..0x3C, adjusted for this hook's own stack frame.
+lwz r0, 16(r11)
+stw r0, 0x54(r1)
+lwz r0, 20(r11)
+stw r0, 0x58(r1)
+lwz r0, 24(r11)
+stw r0, 0x5C(r1)
+hlSpotReturn:
+lwz r5, 16(r1)
+lwz r11, 20(r1)
+lwz r12, 24(r1)
+lwz r0, 12(r1)
+.int 0x7C0FF120 ; mtcrf 255, r0
+lwz r0, 8(r1)
+addi r1, r1, 0x20
+lis r12, 0x1034
+blr
+
+[Mario3DWorld_Headlamp_Passthrough]
+moduleMatches = 0xBBAF1908
+.origin = codecave
+hlCaptureView:
+blr

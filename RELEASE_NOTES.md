@@ -1,3 +1,28 @@
+# Alpha 1.5
+
+## Captain Toad headlamp
+
+- In Captain Toad levels, the first-person headlamp follows the headset's
+  look direction, including looking up and down, instead of the character's
+  facing direction and idle animation.
+- Keeps the native lamp position, brightness, range, activation and wall
+  collision. Diorama lighting and other lights retain their existing behavior.
+- This change is enabled for the European v0 game. Other supported revisions
+  keep their existing lighting.
+
+## Launcher data-folder detection
+
+- Fixes VR not starting when Cemu stores settings.xml beside Cemu.exe.
+  The launcher now copies and enables the VR/FPS packs in the same data
+  folder Cemu actually uses, including existing portable installations.
+- Checks the portable folder first, then settings beside Cemu.exe, then
+  the standard AppData location. This fix was confirmed on an affected setup.
+
+The headlamp change has been tested in the headset. All previous features,
+visibility fixes and the Alpha 1.41 pose-token hotfix remain included.
+
+---
+
 # Alpha 1.41 Hotfix
 
 - Fixes VR stopping after roughly ten minutes, depending on the refresh rate.

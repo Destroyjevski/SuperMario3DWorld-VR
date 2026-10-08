@@ -1,6 +1,6 @@
 # Known issues
 
-**Alpha 1.41** is intended for early testing. A full playthrough has not
+**Alpha 1.5** is intended for early testing. A full playthrough has not
 been validated, and compatibility testing covers one Windows/Cemu/VDXR setup.
 
 ## Shadows
@@ -38,6 +38,8 @@ by default.
 
 ## First person
 
+- Head-directed lighting in Captain Toad levels is currently enabled for the
+  European v0 game only. Other supported revisions keep their native lighting.
 - HUD elements stay anchored in the room and can move out of view as you turn.
 - Intro and world map use the diorama view. A selected first-person mode
   resumes in supported gameplay scenes.

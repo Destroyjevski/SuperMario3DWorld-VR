@@ -6,8 +6,10 @@
 
       * finds Cemu.exe (asked once, remembered in cemu-path.txt beside this file),
       * uses the Cemu data folder that Cemu itself would use - the portable
-        folder if one exists next to Cemu.exe, otherwise %APPDATA%\Cemu, so you
-        never have to create a portable installation,
+        folder if one exists next to Cemu.exe, else the Cemu folder itself
+        when settings.xml lies beside Cemu.exe (Cemu 2.x still reads it there
+        for folders set up before Cemu 2.0-89), otherwise %APPDATA%\Cemu -
+        so you never have to create a portable installation,
       * copies the graphic packs into that folder's graphicPacks directory,
       * backs up settings.xml, enables the packs for the chosen mode and
         selects Vulkan,
@@ -54,7 +56,7 @@ function IsOurEntry($entry) {
 }
 
 Say ''
-Say ('Super Mario 3D World VR - Alpha 1.41 - ' + $modeName)
+Say ('Super Mario 3D World VR - Alpha 1.5 - ' + $modeName)
 Say '-------------------------------------'
 
 # --- the package itself -----------------------------------------------------
@@ -105,8 +107,13 @@ if (Get-Process -Name 'Cemu' -ErrorAction SilentlyContinue) {
 }
 
 # --- the folder Cemu keeps its data in --------------------------------------
+# Same order as Cemu itself (2.x, CemuApp::DeterminePaths): a portable folder
+# beside Cemu.exe, then settings.xml beside Cemu.exe (folders set up before
+# Cemu 2.0-89 and updated since), then %APPDATA%\Cemu.
 $portable = Join-Path $cemuDir 'portable'
-if (Test-Path $portable) { $data = $portable } else { $data = Join-Path $env:APPDATA 'Cemu' }
+if (Test-Path -LiteralPath $portable -PathType Container) { $data = $portable }
+elseif (Test-Path -LiteralPath (Join-Path $cemuDir 'settings.xml')) { $data = $cemuDir }
+else { $data = Join-Path $env:APPDATA 'Cemu' }
 $settingsFile = Join-Path $data 'settings.xml'
 if (-not (Test-Path $settingsFile)) {
     Fail ('Cemu has no settings here yet: ' + $settingsFile + [Environment]::NewLine +
@@ -114,6 +121,7 @@ if (-not (Test-Path $settingsFile)) {
 }
 Say ('Cemu:     ' + $cemuExe)
 Say ('Settings: ' + $settingsFile)
+if ($data -eq $cemuDir) { Say '          (this Cemu keeps its settings beside Cemu.exe)' }
 
 # --- graphic packs ----------------------------------------------------------
 $packRoot = Join-Path $data 'graphicPacks'

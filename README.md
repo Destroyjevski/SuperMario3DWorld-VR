@@ -1,6 +1,6 @@
 # Super Mario 3D World VR
 
-**Alpha 1.41** · Windows x64 · Cemu · OpenXR
+**Alpha 1.5** · Windows x64 · Cemu · OpenXR
 
 Stereo rendering and six-degree-of-freedom head tracking for the Wii U
 version of **Super Mario 3D World**. Play with a gamepad or VR controllers
@@ -24,6 +24,16 @@ world map use the diorama view.
 
 All modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
+
+## New in Alpha 1.5
+
+- In the Captain Toad levels, the first-person headlamp follows your headset's
+  horizontal and vertical look direction. Available for the European v0 game.
+- Keeps the lamp's position, brightness, range and wall collision, along with
+  the existing first-person lamp-effect visibility fix.
+- Fixes VR startup when Cemu keeps settings.xml beside Cemu.exe, so the
+  launcher enables the packs in the correct data folder.
+- Includes all previous features and the Alpha 1.41 long-session hotfix.
 
 ## New in Alpha 1.41
 
@@ -74,7 +84,7 @@ see [known issues](KNOWN-ISSUES.md).
 
 ## Get started
 
-1. Download the **Alpha 1.41 installation ZIP** from [Releases](../../releases).
+1. Download the **Alpha 1.5 installation ZIP** from [Releases](../../releases).
 2. Place its `Mario3DWorld-VR` folder beside `Cemu.exe`.
 3. Close Cemu and run `Start-VR.cmd`.
 4. Open Super Mario 3D World in Cemu and play with your gamepad or VR controllers.
