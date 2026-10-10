@@ -20,6 +20,8 @@
 #include <openxr/openxr_platform.h>
 
 #include "cemuvr/profile.h"
+#include "cemuvr/head_blow_gesture.h"
+#include "cemuvr/mic_blow_capture.h"
 #include "cemuvr/session_anchor.h"
 #include "cemuvr/hud_marker.h"
 
@@ -185,6 +187,8 @@ enum : uint32_t {
     kPadMenu      = 1u << 3,
     kPadTrigger   = 1u << 4,   // aus dem Analogwert abgeleitet
     kPadSqueeze   = 1u << 5,
+    kPadBlow      = 1u << 6,   // right controller held near the headset, or blowing
+                               // heard on the microphone; sent even without hand tracking
 };
 
 // Was eine Hand gerade meldet. Die Pose steht in DEMSELBEN Bezugsraum wie die
@@ -193,6 +197,8 @@ enum : uint32_t {
 struct ControllerInput {
     uint32_t valid{0};        // 1 = verbunden und geortet
     XrPosef  pose{};
+    uint32_t aimValid{0};
+    XrPosef aimPose{};
     uint32_t buttons{0};
     float    trigger{0.0f};
     float    squeeze{0.0f};
@@ -317,6 +323,12 @@ public:
     // including when the surface is reopened after a menu/load transition.
     void setSurface(const CemuVR_SurfaceRequest& s);
     void clearSurface();
+    struct TouchPoint { std::array<XrVector3f,2> eyes{}; uint32_t kind{}; };
+    using TouchPoints = std::array<TouchPoint,9>; // cursor plus eight native guides
+    bool prepareTouchIcons();
+    bool touchRingReady() const { return m_touchRingChain.hasContent; }
+    void setTouchPoints(const TouchPoints& points) { m_touchPoints=points; }
+
     bool surfaceActive() const { return m_surfaceMode != 0; }
     // Nur fuer den Testtreiber: der zuletzt eingereichte Flaechenauftrag.
     const XrPosef& surfaceAnchor() const { return m_surfaceAnchor; }
@@ -398,6 +410,7 @@ private:
 
     XrActionSet m_actionSet{XR_NULL_HANDLE};
     XrAction    m_actPose{XR_NULL_HANDLE};
+    XrAction    m_actAimPose{XR_NULL_HANDLE};
     XrAction    m_actTrigger{XR_NULL_HANDLE};
     XrAction    m_actSqueeze{XR_NULL_HANDLE};
     XrAction    m_actStick{XR_NULL_HANDLE};
@@ -409,8 +422,11 @@ private:
     // Wahr, solange die linke Hand am Kopf ist. Nur die steigende Flanke
     // loest aus - ein Puls, der sich wiederholt, waere ein Brummen.
     bool        m_handAtHead{false};
+    HeadBlowGesture m_headBlow;
+    MicBlowCapture  m_micBlow;
     std::array<XrPath, 2>  m_handPath{{XR_NULL_PATH, XR_NULL_PATH}};
     std::array<XrSpace, 2> m_handSpace{{XR_NULL_HANDLE, XR_NULL_HANDLE}};
+    std::array<XrSpace, 2> m_aimSpace{{XR_NULL_HANDLE, XR_NULL_HANDLE}};
     std::array<ControllerInput, 2> m_hands{};
     uint32_t m_handGeneration{0};
     bool     m_actionsReady{false};
@@ -421,6 +437,11 @@ private:
 
     std::array<EyeChain, 2> m_chains{};
     EyeChain m_hudChain{};
+    EyeChain m_touchRingChain{};
+    TouchPoints m_touchPoints{};
+    bool m_touchIconsTried{};
+    bool uploadTouchIcon(EyeChain& chain,std::vector<uint8_t> pixels);
+
     XrPosef m_hudAnchor{};
     bool m_hudAnchorSet{},m_hudReady{},m_hudTitle{true};
     HudPlacement m_hudPlacement;

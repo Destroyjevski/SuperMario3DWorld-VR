@@ -22,3 +22,9 @@ fps-preset.txt
 settings*.xml
 *.bak
 /Releases/
+
+# Generated local game images must never enter the repository
+touch-gamepad.png
+*.szs
+*.sarc
+*.bflim

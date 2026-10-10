@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include "cemuvr/performance.h"
 #include "cemuvr/reference_marker.h"
+#include "cemuvr/mario_touch_packet.h"
 #include "cemuvr/reference_snapshot.h"
 #include "cemuvr/reference_pair.h"
 #include "cemuvr/reference_pose.h"
@@ -809,6 +810,48 @@ void readLightProbe(uint64_t generation) {
     if(!shown)CVR_INFO("light.diff","identical=1 windows=3x22");
 }
 
+// Touch-only aim history. Never substitutes the grip pose used by gestures.
+static uint8_t* marioTouchMailbox() {
+    static uint8_t* packet=nullptr;static uint8_t* previousBase=nullptr;static ULONGLONG nextScan=0;
+    auto* base=g.bridge.guestMemoryBase();
+    if(base!=previousBase){packet=nullptr;previousBase=base;nextScan=0;}
+    if(!base)return nullptr;
+    constexpr size_t bytes=1104;
+    const uint8_t signature[]={0x4D,0x54,0x4D,0x4B,0,0,0,2};
+    if(!packet) {
+        if(GetTickCount64()<nextScan)return nullptr;
+        nextScan=GetTickCount64()+2000;
+        for(uintptr_t off=0x01800000;off<0x01a00000;) {
+            MEMORY_BASIC_INFORMATION mbi{};if(!VirtualQuery(base+off,&mbi,sizeof(mbi)))break;
+            const uintptr_t next=uintptr_t(mbi.BaseAddress)+mbi.RegionSize-uintptr_t(base);
+            if(next<=off)break;
+            const uintptr_t end=(std::min)(next,uintptr_t(0x01a00000));
+            if(mbi.State==MEM_COMMIT && (mbi.Protect&(PAGE_READWRITE|PAGE_EXECUTE_READWRITE)) && !(mbi.Protect&PAGE_GUARD))
+                for(uintptr_t p=off;p+bytes<=end;p+=4)if(!std::memcmp(base+p,signature,8)){packet=base+p;break;}
+            if(packet)break;off=next;
+        }
+        if(!packet)return nullptr;
+    }
+    MEMORY_BASIC_INFORMATION mbi{};
+    if(!VirtualQuery(packet,&mbi,sizeof(mbi)) || mbi.State!=MEM_COMMIT ||
+       !(mbi.Protect&(PAGE_READWRITE|PAGE_EXECUTE_READWRITE)) || (mbi.Protect&PAGE_GUARD) ||
+       uintptr_t(packet)+bytes>uintptr_t(mbi.BaseAddress)+mbi.RegionSize || std::memcmp(packet,signature,8)) {packet=nullptr;return nullptr;}
+    return packet;
+}
+static void publishMarioAim(uint32_t sequence,const CemuVR_Pose& anchor,float units) {
+    auto* packet=marioTouchMailbox();if(!packet)return;
+    auto* target=packet+656+((sequence/2)%8)*56;
+    const auto& hand=g.xr.controller(1);const auto& p=hand.aimPose;
+    CemuVR_Pose pose{{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},
+                    {p.position.x,p.position.y,p.position.z}};
+    float m[12]{};const bool valid=hand.valid && hand.aimValid && referencePoseInAnchor(anchor,pose,units,m);
+    uint32_t words[13]{};words[0]=_byteswap_ulong(valid?1u:0u);
+    for(int i=0;i<12;++i){uint32_t v{};if(valid)std::memcpy(&v,&m[i],4);words[i+1]=_byteswap_ulong(v);}
+    InterlockedExchange((volatile LONG*)target,_byteswap_ulong(sequence-1));
+    std::memcpy(target+4,words,sizeof(words));
+    InterlockedExchange((volatile LONG*)target,_byteswap_ulong(sequence));
+}
+
 void publishReferencePose(uint64_t generation) {
     // Enabled by default for the Mario release; an environment override remains available.
     if(!envFlag("CEMUVR_REFERENCE_POSE_EXPERIMENT",true))return;
@@ -888,7 +931,7 @@ void publishReferencePose(uint64_t generation) {
         // Explicit opt-in for bounded FakeHMD/diagnostic runs only. Normal
         // sessions reuse wire tokens while keeping full host identities.
         static const bool strictTokenLimit=envFlag("CEMUVR_REFERENCE_STRICT_TOKEN_LIMIT",false);
-        published=referencePoseHistory.publish(fc,strictTokenLimit);
+        published=referencePoseHistory.publish(fc,strictTokenLimit,nextReferencePoseSequence(sequence));
         if(!published.token) {
             CVR_ERR("reference.token","diagnostic_limit=1 strict_token_limit=1 restart_required=1");
             mailboxFailed=true;return;
@@ -935,7 +978,10 @@ void publishReferencePose(uint64_t generation) {
                 referencePoseInAnchor(candidate,handPose,unitsPerMeter,m);
             payload[base5]=_byteswap_ulong(located?1u:0u);
             for(int i=0;i<12;++i)putFloat(base5+1+i,located?m[i]:0.f);
-            payload[base5+13]=_byteswap_ulong(located?in.buttons:0u);
+            // Blowing does not need a tracked hand: the microphone works without
+            // controllers. Every other button still requires a located hand.
+            payload[base5+13]=_byteswap_ulong(located?in.buttons:
+                                              hand==1?(in.buttons&kPadBlow):0u);
             putFloat(base5+14,located?in.trigger:0.f);
             putFloat(base5+15,located?in.squeeze:0.f);
             putFloat(base5+16,located?in.stickX:0.f);
@@ -943,10 +989,38 @@ void publishReferencePose(uint64_t generation) {
         }
     }
     std::memcpy(packet+12,payload,packetVersion>=5?364:packetVersion==4?204:packetVersion==3?180:packetVersion==2?172:108);
+    publishMarioAim(sequence,candidate,unitsPerMeter);
     InterlockedExchange((volatile LONG*)(packet+8),_byteswap_ulong(sequence));
     if(sequence<=8 || generation%120==0)
         CVR_INFO("reference.pose","sequence=%u serial=%llu after_generation=%llu Ltx=%.3f Rtx=%.3f r00=%.5f -- future guest camera experiment",
             sequence,(unsigned long long)fc.poseSerial,(unsigned long long)generation,deltas[3],deltas[15],deltas[0]);
+}
+
+// Bounded marker mailbox; no game objects or actor pointers are dereferenced.
+static void updateMarioTouch(int slot,uint32_t sequence) {
+    if(slot<0 || slot>1 || !sequence || (sequence&1))return;
+    auto* packet=marioTouchMailbox();if(!packet)return;
+    uint32_t raw[80]{},again[80]{};
+    std::memcpy(raw,packet+16+slot*320,sizeof(raw));MemoryBarrier();
+    std::memcpy(again,packet+16+slot*320,sizeof(again));if(std::memcmp(raw,again,sizeof(raw)))return;
+    for(auto& word:raw)word=_byteswap_ulong(word);
+    static const float units=[] {
+        const float factor=std::strtof(envStr("CEMUVR_MARIO_WORLD_SIZE","2").c_str(),nullptr);
+        return 3000.f/((factor>=.25f && factor<=30.f)?factor:1.f);
+    }();
+    MarioTouchPoints decoded{};
+    if(!decodeMarioTouch(raw,sequence,units,decoded))return;
+    g.xr.prepareTouchIcons();
+    // A short guest-epoch lease restores native hints/input if the host stops.
+    auto* words=reinterpret_cast<volatile uint32_t*>(packet);
+    words[3]=_byteswap_ulong(g.xr.touchRingReady()?3u:0u);MemoryBarrier();
+    words[2]=_byteswap_ulong(raw[2]);
+    XrCore::TouchPoints points{};
+    for(size_t i=0;i<points.size();++i) {
+        points[i].kind=decoded[i].kind;
+        for(int e=0;e<2;++e)points[i].eyes[e]={decoded[i].eyes[e][0],decoded[i].eyes[e][1],decoded[i].eyes[e][2]};
+    }
+    g.xr.setTouchPoints(points);
 }
 
 VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKHR* pi) {
@@ -1033,6 +1107,7 @@ VkResult presentReferencePair(DeviceData* dd,VkQueue queue,const VkPresentInfoKH
                 (unsigned long long)generation,token,pairs.poseTokens[slot*2+1],int(stampValid),
                 (unsigned long long)(stampValid?stamp->context.poseSerial:0),int(submitted));
         if(submitted && !surfaceFrame && hudHeld)g.xr.submitHud(dd->hudInterop.d3dTexture(0),hudTitle);
+        if(submitted && !surfaceFrame && stampValid)updateMarioTouch(slot,stamp->mailboxSequence);
         g.xr.endFrame();
     }
     if(hudHeld)dd->hudInterop.releaseFromD3D11(0);

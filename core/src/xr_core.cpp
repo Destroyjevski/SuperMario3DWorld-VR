@@ -2,6 +2,7 @@
 #include "cemuvr/xr_core.h"
 #include "cemuvr/bildlage.h"
 #include "cemuvr/diag.h"
+#include "cemuvr/touch_preview.h"
 
 #include <dxgi1_2.h>
 #include <cmath>
@@ -576,6 +577,11 @@ void XrCore::detach() {
         c.images.clear();
     }
     if(m_hudChain.handle)xrDestroySwapchain(m_hudChain.handle);
+    for(auto* c:{&m_touchRingChain}) {
+        if(c->handle)xrDestroySwapchain(c->handle);
+        *c={};
+    }
+    m_touchIconsTried=false;m_touchPoints={};
     m_hudChain={};m_hudAnchorSet=false;m_hudReady=false;m_hudPlacement={};
     // Vor den Raeumen: die Handraeume gehoeren zur Sitzung und muessen
     // weg, bevor sie zerstoert wird.
@@ -1101,6 +1107,47 @@ void XrCore::endFrame() {
     }
     m_hudReady=false;
 
+    // Only neutral hits draw the ring. Actionable hits use the native 3D hand.
+    // Missing frame data draws nothing; never substitute a floating one-metre ring.
+    const auto rotate=[](XrQuaternionf q,XrVector3f v) {
+        const XrVector3f t{2*(q.y*v.z-q.z*v.y),2*(q.z*v.x-q.x*v.z),2*(q.x*v.y-q.y*v.x)};
+        return XrVector3f{v.x+q.w*t.x+q.y*t.z-q.z*t.y,
+            v.y+q.w*t.y+q.z*t.x-q.x*t.z,v.z+q.w*t.z+q.x*t.y-q.y*t.x};
+    };
+    std::array<XrCompositionLayerQuad,10> touchQuads{};
+    size_t touchCount=0;
+    if(!m_surfaceMode && proj.viewCount==2 && m_frameState.shouldRender) {
+        const auto& hand=m_hands[1];
+        const bool preview=hand.valid && hand.aimValid && (hand.buttons&kPadSqueeze);
+        if(!preview)m_touchPoints[0]={};
+        for(size_t i=0;i<m_touchPoints.size();++i) {
+            const auto& point=m_touchPoints[i];
+            if(!point.kind)continue;
+            XrVector3f centre{},eyeCentre{};
+            for(int e=0;e<2;++e) {
+                const auto p=pv[e].pose.position;const auto v=rotate(pv[e].pose.orientation,point.eyes[e]);
+                centre.x+=(p.x+v.x)*.5f;centre.y+=(p.y+v.y)*.5f;centre.z+=(p.z+v.z)*.5f;
+                eyeCentre.x+=p.x*.5f;eyeCentre.y+=p.y*.5f;eyeCentre.z+=p.z*.5f;
+            }
+            const XrVector3f d{centre.x-eyeCentre.x,centre.y-eyeCentre.y,centre.z-eyeCentre.z};
+            const float distance=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+            if(!std::isfinite(distance) || distance<.02f || distance>1000.f)continue;
+            const auto add=[&](const EyeChain& chain,float angularSize,bool pulse) {
+                if(!chain.hasContent || touchCount>=touchQuads.size())return;
+                float size=distance*angularSize;
+                if(pulse)size*=1.f+.08f*std::sin(float(GetTickCount64()%1400)/1400.f*6.2831853f);
+                size=(std::clamp)(size,.008f,4.f);
+                auto& q=touchQuads[touchCount++];q={XR_TYPE_COMPOSITION_LAYER_QUAD};
+                q.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+                q.space=m_stageSpace;q.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+                q.pose=pv[0].pose;q.pose.position=centre;q.size={size,size};
+                q.subImage.swapchain=chain.handle;q.subImage.imageRect={{0,0},{256,256}};
+                layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&q));
+            };
+            if(i==0 && point.kind==1)add(m_touchRingChain,touchPreviewAngularSize,true);
+        }
+    }
+    m_touchPoints={};
     XrFrameEndInfo fei{XR_TYPE_FRAME_END_INFO};
     fei.displayTime = m_frameState.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -1386,6 +1433,38 @@ bool XrCore::stampRenderedPair(const CemuVR_FrameContext& rendered) {
         m_eyeStamp[e].valid=true;
     }
     m_explicitRenderedPair=true;return true;
+}
+
+bool XrCore::uploadTouchIcon(EyeChain& chain,std::vector<uint8_t> pixels) {
+    if(pixels.size()!=256*256*4)return false;
+    const bool bgra=m_format==DXGI_FORMAT_B8G8R8A8_UNORM || m_format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    if(!bgra && m_format!=DXGI_FORMAT_R8G8B8A8_UNORM && m_format!=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)return false;
+    if(bgra)for(size_t i=0;i<pixels.size();i+=4)std::swap(pixels[i],pixels[i+2]);
+    const auto fail=[&]() {if(chain.handle)xrDestroySwapchain(chain.handle);chain={};return false;};
+    XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    ci.usageFlags=XR_SWAPCHAIN_USAGE_SAMPLED_BIT|XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+    ci.format=m_format;ci.sampleCount=1;ci.width=ci.height=256;ci.faceCount=ci.arraySize=ci.mipCount=1;
+    if(XR_FAILED(xrCreateSwapchain(m_session,&ci,&chain.handle)))return fail();
+    uint32_t count=0;
+    if(XR_FAILED(xrEnumerateSwapchainImages(chain.handle,0,&count,nullptr)) || !count)return fail();
+    chain.images.assign(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
+    if(XR_FAILED(xrEnumerateSwapchainImages(chain.handle,count,&count,(XrSwapchainImageBaseHeader*)chain.images.data())))return fail();
+    XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    if(XR_FAILED(xrAcquireSwapchainImage(chain.handle,&ai,&chain.acquiredIndex)))return fail();
+    XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
+    if(XR_FAILED(xrWaitSwapchainImage(chain.handle,&wi)))return fail();
+    m_ctx->UpdateSubresource(chain.images[chain.acquiredIndex].texture,0,nullptr,pixels.data(),256*4,0);
+    XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    if(XR_FAILED(xrReleaseSwapchainImage(chain.handle,&ri)))return fail();
+    chain.acquiredIndex=UINT32_MAX;chain.hasContent=true;return true;
+}
+bool XrCore::prepareTouchIcons() {
+    if(!m_session)return false;
+    if(!m_touchIconsTried) {
+        m_touchIconsTried=true;
+        uploadTouchIcon(m_touchRingChain,makeTouchPreview(256));
+    }
+    return m_touchRingChain.hasContent;
 }
 
 bool XrCore::submitHud(ID3D11Texture2D* src,bool title) {

@@ -1,6 +1,6 @@
 # Super Mario 3D World VR
 
-**Alpha 1.5** · Windows x64 · Cemu · OpenXR
+**Alpha 1.6** · Windows x64 · Cemu · OpenXR
 
 Stereo rendering and six-degree-of-freedom head tracking for the Wii U
 version of **Super Mario 3D World**. Play with a gamepad or VR controllers
@@ -24,6 +24,19 @@ world map use the diorama view.
 
 All modes include room-anchored menus and HUD, head tracking, and VR camera
 framing for the opening cinematic.
+
+## New in Alpha 1.6
+
+- **Touch platforms with VR controllers.** Hold the right grip to aim a blue
+  touch ring with the right controller. On a touch platform the game's own
+  pointing hand takes its place; press the right trigger while holding grip to
+  touch. Without grip, the trigger jumps as before. Tested in World 2-2.
+- **Blowing.** Blow steadily into your headset microphone, or hold the right
+  controller near your headset. Speech does not count as blowing. Works with VR
+  controllers and with a gamepad; no microphone setup in Cemu is needed.
+- The microphone is analysed in memory only; nothing is recorded, saved or sent.
+  It can be switched off in `Start-VR.cmd`.
+- Touch and blowing are available for the European v0 game.
 
 ## New in Alpha 1.5
 
@@ -84,7 +97,7 @@ see [known issues](KNOWN-ISSUES.md).
 
 ## Get started
 
-1. Download the **Alpha 1.5 installation ZIP** from [Releases](../../releases).
+1. Download the **Alpha 1.6 installation ZIP** from [Releases](../../releases).
 2. Place its `Mario3DWorld-VR` folder beside `Cemu.exe`.
 3. Close Cemu and run `Start-VR.cmd`.
 4. Open Super Mario 3D World in Cemu and play with your gamepad or VR controllers.
@@ -134,9 +147,19 @@ Set emulated controller 1 to **Wii U GamePad**.
 - **D-pad gesture:** hold the left controller near your head, then use the
   right stick for D-pad directions. Move the left controller away to resume
   camera turning. A short vibration confirms the gesture.
+- **Touch:** hold the right grip to aim the touch ring, then press the right
+  trigger while holding grip to touch. Without grip, the trigger jumps.
+- **Blow gesture:** hold the right controller near your headset; a short
+  vibration confirms it. Move it away to stop blowing.
 
 See the [VR controller button table](INSTALL.md#vr-controllers-motion-controllers)
 for the full Quest/Touch layout. These bindings are separate from the gamepad's.
+
+### Microphone with either input device
+
+Blow steadily into your headset microphone to blow in the game, with a gamepad
+or VR controllers. Short puffs and speech do not count. See
+[INSTALL.md](INSTALL.md#blowing) for the microphone used and how to switch it off.
 
 ### Camera behaviour with either input device
 
@@ -182,4 +205,6 @@ for a dependency and license summary.
 This project is not affiliated with or endorsed by Nintendo, Cemu or BetterVR.
 Game names, characters and assets belong to their respective rights holders.
 Users must provide their own legally obtained game. The package contains no
-game dump, keys, firmware, saves or extracted game assets.
+game dump, keys, firmware, saves or extracted game assets. The touch hand is
+the game's own 3D model, drawn by the game at runtime from the user's copy;
+nothing is extracted, cached or included.

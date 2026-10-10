@@ -61,7 +61,7 @@ def install_files(dll: Path) -> dict[str, bytes]:
 
 
 def audit(name: str, files: dict[str, bytes]) -> None:
-    forbidden_names = re.compile(r"(?i)(\.exe$|\.rpx$|\.wud$|\.wux$|\.tik$|\.tmd$|gamedata\.bin|save|shadercache|\.pdb$|pre-push-checks\.json$)")
+    forbidden_names = re.compile(r"(?i)(\.png$|\.szs$|\.sarc$|\.bflim$|\.bfres$|cache\.json$|\.exe$|\.rpx$|\.wud$|\.wux$|\.tik$|\.tmd$|gamedata\.bin|save|shadercache|\.pdb$|pre-push-checks\.json$)")
     # Optional local-only denylist: JSON array of strings, never stored in the archive.
     extra_terms = json.loads(os.environ.get("CEMUVR_PRIVACY_TERMS", "[]"))
     if not isinstance(extra_terms, list) or any(not isinstance(t, str) or not t for t in extra_terms):

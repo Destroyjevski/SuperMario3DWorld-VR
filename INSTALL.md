@@ -9,9 +9,9 @@
 - For the default 120 FPS preset, use a 120 Hz headset refresh rate.
 - Close Cemu before starting a VR session.
 
-## Install Alpha 1.5
+## Install Alpha 1.6
 
-1. Extract `SuperMario3DWorld-VR-Alpha-1.5-install.zip`.
+1. Extract `SuperMario3DWorld-VR-Alpha-1.6-install.zip`.
 2. Copy its **`Mario3DWorld-VR`** folder into your Cemu folder, beside `Cemu.exe`.
 3. Open that folder and run **`Start-VR.cmd`**. The game starts in diorama mode.
 4. Launch the game from Cemu's game list.
@@ -90,6 +90,46 @@ camera turning.
 A configured gamepad can still be used alongside VR controllers. A resting
 VR stick does not override the gamepad stick.
 
+### Blowing
+
+Blow into your headset microphone as you would into the GamePad. The mod
+recognises blowing itself, so nothing needs to be set up in Cemu. It listens on
+the Windows default recording device, which is usually the headset microphone
+while Virtual Desktop or SteamVR is running. With wireless streaming, enable
+microphone forwarding in your streaming software. This works with VR
+controllers and with a gamepad.
+
+Blow steadily and directly onto the microphone; blowing counts after about a
+quarter of a second. Short puffs, speaking, whistling and hissing do not count,
+and while you talk, blowing is paused until you have been quiet for a moment.
+This strictness is deliberate, so that talking does not blow in the game. If you
+find it too strict, please report it, or use the right-controller gesture below.
+
+The audio is analysed in memory in 10 ms steps and then discarded. The mod does
+not record, save or send audio. Windows shows Cemu as using the microphone
+during the session. To change this, edit `Start-VR.cmd`:
+
+- `set "CEMUVR_BLOW_MIC=0"` switches microphone detection off.
+- `set "CEMUVR_BLOW_MIC=Headset"` uses the first recording device whose name
+  contains "Headset" instead of the default device.
+- Adding `set "CEMUVR_BLOW_MIC_DB=-55"` makes detection more sensitive
+  (default -45).
+
+Speech/noise filtering in the headset or streaming software can weaken blowing.
+If it is not recognised, switch that filtering off or use the gesture below.
+Cemu's own **Microphone (Experimental)** setting is not needed. If it is set, it
+keeps working alongside.
+
+As an alternative, hold the **right controller near your headset** for a moment.
+A short vibration confirms activation. Keep it there to blow, then move it away
+to stop. This works alongside the microphone, without a mapped button.
+The left-controller D-pad gesture is unchanged. Tracking/focus loss cancels the
+gesture, and it requires a new short hold after tracking returns.
+
+Blowing by microphone and gesture is currently enabled for the locally verified
+European v0 game module. Other modules retain their native microphone input.
+Microphone blowing was tested with a Quest 3 through Virtual Desktop.
+
 ### Camera behaviour with either input device
 
 Head tracking works with either control option. In first person, right-stick
@@ -126,3 +166,16 @@ graphics API and debug-logging settings. The copied pack files remain installed.
 
 If Cemu or the launcher is forcibly closed, check the enabled graphic packs
 before returning to ordinary 2D play. No system-wide Vulkan layer is installed.
+
+### Touch platforms with VR controllers
+
+In World 2-2, hold the right grip to aim with the blue touch ring. The game's
+3D pointing hand replaces the ring when aiming at a touch platform.
+The pointer uses the right controller's aim direction. While holding grip, press the right trigger
+to activate it. Without grip, the right trigger retains its jump function.
+Release the trigger after touching before using it to jump again.
+
+The hand is the game's own live 3D model. No game graphics are extracted, cached
+or included in this mod. The ring, hand and activation use the same collision
+point. The new native touch hooks currently target the European base game; other
+executables retain their existing touch controls and hints.

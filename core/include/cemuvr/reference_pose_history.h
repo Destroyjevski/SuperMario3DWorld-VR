@@ -10,6 +10,11 @@ inline uint32_t nextReferencePoseSequence(uint32_t sequence) {
     return sequence ? sequence : 2u;
 }
 
+// Touch markers carry the full mailbox sequence, not the wrapping wire token.
+inline bool referencePoseSequenceMatches(uint32_t left, uint32_t right, uint32_t expected) {
+    return expected && !(expected & 1u) && left == expected && right == expected;
+}
+
 // Access is serialized by the layer's g_mtx. Tokens are only a 16-bit wire
 // representation; queued markers retain the full publication identity below.
 class ReferencePoseHistory {
@@ -20,6 +25,7 @@ public:
         uint64_t publication{};
         uint32_t token{};
         CemuVR_FrameContext context{};
+        uint32_t mailboxSequence{};
     };
     struct Published {
         uint64_t publication{};
@@ -27,13 +33,13 @@ public:
         bool wrapped{};
     };
 
-    Published publish(const CemuVR_FrameContext& context, bool strictDiagnostic = false) {
+    Published publish(const CemuVR_FrameContext& context, bool strictDiagnostic = false, uint32_t mailboxSequence = 0) {
         if (strictDiagnostic && m_publication >= maxToken) return {};
         const bool wrapped = m_token == maxToken;
         m_token = wrapped ? 1u : m_token + 1u;
         // A 64-bit rollover is not a session limit either. Discard the old ring.
         if (++m_publication == 0) { m_entries = {}; m_publication = 1; }
-        m_entries[m_publication % capacity] = {m_publication, m_token, context};
+        m_entries[m_publication % capacity] = {m_publication, m_token, context, mailboxSequence};
         return {m_publication, m_token, wrapped};
     }
 

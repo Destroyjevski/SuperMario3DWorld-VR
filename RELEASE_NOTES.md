@@ -1,3 +1,35 @@
+# Alpha 1.6
+
+## Touch platforms with VR controllers
+
+- Hold the right grip to aim a blue touch ring along the right controller's
+  pointing direction. On a touch platform, the game's own 3D pointing hand
+  replaces the ring.
+- Press the right trigger while holding grip to touch. Without grip, the right
+  trigger keeps its jump function.
+- The hand is drawn by the game itself at runtime; no game graphics are
+  extracted, cached or included. Enabled for the European v0 game.
+
+## Blowing
+
+- The mod listens on the Windows default recording device and recognises
+  blowing itself; no microphone setup in Cemu is needed. Works with VR
+  controllers and with a gamepad.
+- Speech does not count: blowing has to be steady and is paused while you
+  talk. This strictness is deliberate. If you find it too strict, please
+  report it.
+- Alternative without the microphone: hold the right controller near your
+  headset until it vibrates.
+- Audio is analysed in memory in 10 ms steps and discarded; nothing is
+  recorded, saved or sent. `set "CEMUVR_BLOW_MIC=0"` in `Start-VR.cmd`
+  switches the microphone off.
+- Enabled for the European v0 game.
+
+Touch in World 2-2 and microphone blowing were tested in the headset (Quest 3
+through Virtual Desktop). All previous features remain included.
+
+---
+
 # Alpha 1.5
 
 ## Captain Toad headlamp

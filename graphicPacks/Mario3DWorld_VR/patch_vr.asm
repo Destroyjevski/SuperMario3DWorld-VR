@@ -108,6 +108,12 @@ b rrAfterSecondDraw
 
 0x024DB304 = rrAfterBeforeCalc:
 rrBeforeCalc:
+; Synthetic microphone input expires unless this calc validates the pose packet.
+lis r12, mbState@ha
+li r11, 0
+stw r11, mbState@l(r12)
+lis r12, tcPadReady@ha
+stw r11, tcPadReady@l(r12)
 lis r12, mrCullCount@ha
 li r11, 0
 stw r11, mrCullCount@l(r12)
@@ -339,6 +345,43 @@ lwz r11, 8(r8)
 cmpw r7, r11
 bne rrPoseLatchDone
 stw r7, 0(r12)
+; Accept the gesture only from this validated controller snapshot. Four calc
+; frames without a new controller generation expire it (including host loss).
+lis r9, mbState@ha
+addi r9, r9, mbState@l
+lwz r11, 0(r10)
+cmpwi r11, 0
+beq mbLatchDone
+lwz r7, 4(r9)
+cmpw r7, r11
+beq mbRepeated
+stw r11, 4(r9)
+li r7, 0
+b mbAgeReady
+mbRepeated:
+lwz r7, 8(r9)
+cmpwi r7, 4
+bge mbLatchDone
+addi r7, r7, 1
+mbAgeReady:
+stw r7, 8(r9)
+cmpwi r7, 4
+bge mbLatchDone
+lis r11, rrEnabled@ha
+lwz r11, rrEnabled@l(r11)
+cmpwi r11, 1
+bne mbLatchDone
+; No located-hand check: the host sends only this bit for an untracked hand,
+; so microphone blowing also works with a gamepad and no controllers.
+lwz r11, 140(r10)
+andi. r11, r11, 0x40 ; kPadBlow, independent of VPAD buttons
+beq mbLatchDone
+li r11, 1
+stw r11, 0(r9)
+mbLatchDone:
+li r11, 1
+lis r9, tcPadReady@ha
+stw r11, tcPadReady@l(r9)
 rrPoseLatchDone:
 ; The camera switch off the right controller's stick click. This path never
 ; touches Cemu's input configuration, which is where the reported failures live.
@@ -2216,6 +2259,7 @@ stw r7, 32(r1)
 stw r8, 36(r1)
 stw r11, 40(r1)
 stw r12, 44(r1)
+bl tcCameraCapture
 bl hlCaptureView
 lwz r3, 16(r1)
 lwz r4, 20(r1)
@@ -2643,6 +2687,7 @@ stw r0, 0x34(r1)
 stw r4, 8(r1)
 stw r6, 12(r1)
 bl import.vpad.VPADRead
+bl tcInputUpdate
 lwz r4, 8(r1)
 lwz r6, 12(r1)
 cmpwi r3, 0
@@ -2740,6 +2785,11 @@ lis r12, 65535
 ori r12, r12, 57343
 and r6, r6, r12
 mtMotionRightDoneBit1:
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+lwz r12, 8(r12)
+cmpwi r12, 0
+bne mtMotionRightDoneBit2
 li r12, 16
 and r12, r11, r12
 cmpwi r12, 0
@@ -2749,6 +2799,10 @@ lis r12, 65535
 ori r12, r12, 49151
 and r6, r6, r12
 mtMotionRightDoneBit2:
+lis r12, tcButtons@ha
+lwz r12, tcButtons@l(r12)
+cmpwi r12, 0
+bne mtMotionRightDoneBit3
 li r12, 32
 and r12, r11, r12
 cmpwi r12, 0
@@ -17996,6 +18050,23 @@ pfEffectFilterState:
 0x0253FAF4 = bla pfEffectSubmit
 0x023E3AD4 = bla pfDraw
 
+; Controller gesture state. No samples or native microphone state are modified.
+mbState:
+.int 0 ; active this calc
+.int 0 ; last accepted controller generation
+.int 0 ; repeated-generation age, saturates at four
+mbVolume:
+.float 3300.0 ; strong input in the game's raw microphone-volume units
+mbUnitVolume:
+.float 1.0
+
+tcPadReady:
+.int 0
+tcButtons:
+.int 0
+.int 0
+.int 0
+
 [Mario3DWorld_Headlamp_EU_v0]
 moduleMatches = 0xD2308838
 .origin = codecave
@@ -18264,4 +18335,2247 @@ blr
 moduleMatches = 0xBBAF1908
 .origin = codecave
 hlCaptureView:
+blr
+
+[VR_BlowGesture_Verified]
+moduleMatches = 0xD2308838
+.origin = codecave
+; Keep native microphone processing when the right-hand gesture is inactive.
+; Facade-entry hooks also work when no audio device is configured.
+mbGetRaw:
+lis r12, mbState@ha
+lwz r12, mbState@l(r12)
+cmpwi r12, 1
+bne mbGetRawNative
+lis r12, rrEnabled@ha
+lwz r12, rrEnabled@l(r12)
+cmpwi r12, 1
+bne mbGetRawNative
+lis r12, mbVolume@ha
+lfs f1, mbVolume@l(r12)
+blr
+mbGetRawNative:
+mflr r0
+b mbGetRawResume
+0x024BC75C = mbGetRawResume:
+0x024BC758 = ba mbGetRaw
+
+mbGetLoud:
+lis r12, mbState@ha
+lwz r12, mbState@l(r12)
+cmpwi r12, 1
+bne mbGetLoudNative
+lis r12, rrEnabled@ha
+lwz r12, rrEnabled@l(r12)
+cmpwi r12, 1
+bne mbGetLoudNative
+li r3, 1
+blr
+mbGetLoudNative:
+mflr r0
+b mbGetLoudResume
+0x024BC814 = mbGetLoudResume:
+0x024BC810 = ba mbGetLoud
+
+mbGetFiltered:
+lis r12, mbState@ha
+lwz r12, mbState@l(r12)
+cmpwi r12, 1
+bne mbGetFilteredNative
+lis r12, rrEnabled@ha
+lwz r12, rrEnabled@l(r12)
+cmpwi r12, 1
+bne mbGetFilteredNative
+lis r12, mbVolume@ha
+lfs f1, mbVolume@l(r12)
+blr
+mbGetFilteredNative:
+mflr r0
+b mbGetFilteredResume
+0x024BC8C8 = mbGetFilteredResume:
+0x024BC8C4 = ba mbGetFiltered
+
+mbGetDetected:
+lis r12, mbState@ha
+lwz r12, mbState@l(r12)
+cmpwi r12, 1
+bne mbGetDetectedNative
+lis r12, rrEnabled@ha
+lwz r12, rrEnabled@l(r12)
+cmpwi r12, 1
+bne mbGetDetectedNative
+li r3, 1
+blr
+mbGetDetectedNative:
+mflr r0
+b mbGetDetectedResume
+0x024BC980 = mbGetDetectedResume:
+0x024BC97C = ba mbGetDetected
+
+[Mario3DWorld_Touch_EU_v0]
+moduleMatches = 0xD2308838
+.origin = codecave
+; Grip previews; only grip + trigger activates native touch. No fake hover press.
+tcInputUpdate:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lis r10, tcButtons@ha
+addi r10, r10, tcButtons@l
+li r0, 0
+stw r0, 0(r10)
+stw r0, 4(r10)
+lis r11, mtPad@ha
+addi r11, r11, mtPad@l
+lwz r0, 140(r11)
+andi. r0, r0, 16
+bne tcInputHeld
+li r0, 0
+stw r0, 8(r10)
+tcInputHeld:
+lis r12, tcWorld@ha
+addi r12, r12, tcWorld@l
+lwz r0, 48(r12)
+cmpwi r0, 0
+beq tcInputDone
+lis r12, mrCullEpoch@ha
+lwz r12, mrCullEpoch@l(r12)
+subf r0, r0, r12
+cmplwi r0, 2
+bgt tcInputDone
+lis r12, tcPadReady@ha
+addi r12, r12, tcPadReady@l
+lwz r0, 0(r12)
+cmpwi r0, 1
+bne tcInputDone
+lis r12, mbState@ha
+addi r12, r12, mbState@l
+lwz r0, 8(r12)
+cmpwi r0, 4
+bge tcInputDone
+lwz r0, 88(r11)
+cmpwi r0, 1
+bne tcInputDone
+lwz r0, 140(r11)
+andi. r0, r0, 32
+beq tcInputDone
+bl tcLease
+cmpwi r3, 0
+beq tcInputDone
+lis r10, tcButtons@ha
+addi r10, r10, tcButtons@l
+lis r11, mtPad@ha
+addi r11, r11, mtPad@l
+li r0, 1
+stw r0, 0(r10)
+lwz r0, 140(r11)
+andi. r0, r0, 16
+beq tcInputDone
+li r0, 1
+stw r0, 4(r10)
+stw r0, 8(r10)
+tcInputDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+blr
+tcLease:
+lis r12, tcPacket@ha
+addi r12, r12, tcPacket@l
+lwz r3, 12(r12)
+lwz r0, 8(r12)
+cmpwi r0, 0
+beq tcLeaseNo
+lis r11, mrCullEpoch@ha
+addi r11, r11, mrCullEpoch@l
+lwz r11, 0(r11)
+subf r0, r0, r11
+cmplwi r0, 8
+bgt tcLeaseNo
+blr
+tcLeaseNo:
+li r3, 0
+blr
+tcCameraCapture:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lis r12, tcWorld@ha
+addi r12, r12, tcWorld@l
+li r0, 0
+stw r0, 48(r12)
+lis r11, mrSceneClass@ha
+addi r11, r11, mrSceneClass@l
+lwz r0, 0(r11)
+lis r11, 0x1032
+ori r11, r11, 0x86DC
+cmpw r0, r11
+bne tcCameraDone
+lis r11, rrSlot@ha
+addi r11, r11, rrSlot@l
+lwz r8, 0(r11)
+mulli r7, r8, 2
+add r7, r7, r10
+mulli r7, r7, 4
+lis r11, mtNearState@ha
+addi r11, r11, mtNearState@l
+add r11, r11, r7
+lwz r6, 0(r11)
+lis r11, tcConst@ha
+addi r11, r11, tcConst@l
+lfs f12, 0(r11)
+cmpwi r6, 1
+bne tcCameraScale
+lfs f12, 4(r11)
+tcCameraScale:
+stfs f12, 52(r12)
+stw r6, 56(r12)
+lis r11, mtControl@ha
+addi r11, r11, mtControl@l
+lwz r0, 8(r11)
+stw r0, 60(r12)
+lis r11, rrPoseLatch0@ha
+addi r11, r11, rrPoseLatch0@l
+mulli r8, r8, 196
+add r11, r11, r8
+lwz r0, 0(r11)
+cmpwi r0, 0
+beq tcCameraDone
+stw r0, 68(r12)
+addi r11, r11, 4
+cmpwi r10, 1
+beq tcCameraDelta
+addi r11, r11, 48
+tcCameraDelta:
+lfs f1, 0(r9)
+lfs f2, 0(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 16(r9)
+lfs f2, 16(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 32(r9)
+lfs f2, 32(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 0(r12)
+lfs f1, 0(r9)
+lfs f2, 4(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 16(r9)
+lfs f2, 20(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 32(r9)
+lfs f2, 36(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 4(r12)
+lfs f1, 0(r9)
+lfs f2, 8(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 16(r9)
+lfs f2, 24(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 32(r9)
+lfs f2, 40(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 8(r12)
+lfs f1, 0(r9)
+lfs f2, 12(r11)
+fmuls f2, f2, f12
+lfs f3, 12(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 16(r9)
+lfs f2, 28(r11)
+fmuls f2, f2, f12
+lfs f3, 28(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 32(r9)
+lfs f2, 44(r11)
+fmuls f2, f2, f12
+lfs f3, 44(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 12(r12)
+lfs f1, 4(r9)
+lfs f2, 0(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r9)
+lfs f2, 16(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 32(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 16(r12)
+lfs f1, 4(r9)
+lfs f2, 4(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r9)
+lfs f2, 20(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 36(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 20(r12)
+lfs f1, 4(r9)
+lfs f2, 8(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r9)
+lfs f2, 24(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 40(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 24(r12)
+lfs f1, 4(r9)
+lfs f2, 12(r11)
+fmuls f2, f2, f12
+lfs f3, 12(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r9)
+lfs f2, 28(r11)
+fmuls f2, f2, f12
+lfs f3, 28(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 44(r11)
+fmuls f2, f2, f12
+lfs f3, 44(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 28(r12)
+lfs f1, 8(r9)
+lfs f2, 0(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 24(r9)
+lfs f2, 16(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 32(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 32(r12)
+lfs f1, 8(r9)
+lfs f2, 4(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 24(r9)
+lfs f2, 20(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 36(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 36(r12)
+lfs f1, 8(r9)
+lfs f2, 8(r11)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 24(r9)
+lfs f2, 24(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 40(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 40(r12)
+lfs f1, 8(r9)
+lfs f2, 12(r11)
+fmuls f2, f2, f12
+lfs f3, 12(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 24(r9)
+lfs f2, 28(r11)
+fmuls f2, f2, f12
+lfs f3, 28(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 44(r11)
+fmuls f2, f2, f12
+lfs f3, 44(r9)
+fsubs f2, f2, f3
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 44(r12)
+lis r11, mrCullEpoch@ha
+addi r11, r11, mrCullEpoch@l
+lwz r0, 0(r11)
+stw r0, 48(r12)
+bl tcPublish
+tcCameraDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+blr
+tcManager:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+lwz r0, 8(r30)
+stw r0, 0(r12)
+li r0, 0
+stw r0, 4(r12)
+bl tcInputUpdate
+bl tcPrepareRay
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcManagerDone
+lwz r3, 8(r30)
+cmpwi r3, 0
+beq tcManagerDone
+lwz r0, 0x88(r3)
+cmpwi r0, 0
+beq tcManagerDone
+bl 0x021A6650
+tcManagerDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+b tcTouchDown
+0x021A5368 = bla tcManager
+tcTouchDown:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcTouchNative
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+lwz r3, 4(r12)
+blr
+tcTouchNative:
+b 0x0249533C
+0x021A5550 = bla tcTouchDown
+0x021A5490 = bla tcTouchDown
+0x021A5530 = bla tcTouchDown
+tcPrepareRay:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+li r0, 0
+stw r0, 0(r12)
+stw r0, 4(r12)
+stw r0, 8(r12)
+lis r11, tcButtons@ha
+addi r11, r11, tcButtons@l
+lwz r0, 0(r11)
+cmpwi r0, 0
+beq tcPrepareDone
+lis r11, tcWorld@ha
+addi r11, r11, tcWorld@l
+lis r10, mrCullEpoch@ha
+addi r10, r10, mrCullEpoch@l
+lwz r10, 0(r10)
+lwz r0, 48(r11)
+cmpwi r0, 0
+beq tcPrepareDone
+subf r0, r0, r10
+cmplwi r0, 2
+bgt tcPrepareDone
+lis r8, mtControl@ha
+addi r8, r8, mtControl@l
+lwz r0, 8(r8)
+lwz r7, 60(r11)
+cmpw r0, r7
+bne tcPrepareDone
+; Separate aim history: exact pose sequence, with a second seqlock read.
+lis r8, rrSlot@ha
+lwz r0, rrSlot@l(r8)
+mulli r0, r0, 196
+lis r8, rrPoseLatch0@ha
+addi r8, r8, rrPoseLatch0@l
+add r8, r8, r0
+lwz r7, 0(r8)
+cmpwi r7, 0
+beq tcPrepareDone
+andi. r0, r7, 14
+mulli r0, r0, 28
+lis r8, tcAimHistory@ha
+addi r8, r8, tcAimHistory@l
+add r8, r8, r0
+lwz r0, 0(r8)
+cmpw r0, r7
+bne tcPrepareDone
+.int 0x7C2004AC ; lwsync
+lwz r0, 4(r8)
+cmpwi r0, 1
+bne tcPrepareDone
+lis r6, tcAimPose@ha
+addi r6, r6, tcAimPose@l
+lwz r0, 8(r8)
+stw r0, 0(r6)
+lwz r0, 12(r8)
+stw r0, 4(r6)
+lwz r0, 16(r8)
+stw r0, 8(r6)
+lwz r0, 20(r8)
+stw r0, 12(r6)
+lwz r0, 24(r8)
+stw r0, 16(r6)
+lwz r0, 28(r8)
+stw r0, 20(r6)
+lwz r0, 32(r8)
+stw r0, 24(r6)
+lwz r0, 36(r8)
+stw r0, 28(r6)
+lwz r0, 40(r8)
+stw r0, 32(r6)
+lwz r0, 44(r8)
+stw r0, 36(r6)
+lwz r0, 48(r8)
+stw r0, 40(r6)
+lwz r0, 52(r8)
+stw r0, 44(r6)
+.int 0x7C2004AC ; lwsync
+lwz r0, 0(r8)
+cmpw r0, r7
+bne tcPrepareDone
+mr r8, r6
+lfs f12, 52(r11)
+stfs f12, 64(r12)
+stw r10, 12(r12)
+lfs f1, 0(r11)
+lfs f2, 12(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 4(r11)
+lfs f2, 28(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r11)
+lfs f2, 44(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 12(r11)
+fadds f0, f0, f1
+stfs f0, 16(r12)
+lfs f1, 0(r11)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 4(r11)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r11)
+lfs f2, 40(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+stfs f0, 28(r12)
+lfs f1, 16(r11)
+lfs f2, 12(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r11)
+lfs f2, 28(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r11)
+lfs f2, 44(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 28(r11)
+fadds f0, f0, f1
+stfs f0, 20(r12)
+lfs f1, 16(r11)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 20(r11)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r11)
+lfs f2, 40(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+stfs f0, 32(r12)
+lfs f1, 32(r11)
+lfs f2, 12(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 36(r11)
+lfs f2, 28(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r11)
+lfs f2, 44(r8)
+fmuls f2, f2, f12
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 44(r11)
+fadds f0, f0, f1
+stfs f0, 24(r12)
+lfs f1, 32(r11)
+lfs f2, 8(r8)
+fmuls f1, f1, f2
+fmr f0, f1
+lfs f1, 36(r11)
+lfs f2, 24(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r11)
+lfs f2, 40(r8)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+fneg f0, f0
+stfs f0, 36(r12)
+lis r11, tcConst@ha
+addi r11, r11, tcConst@l
+lfs f5, 8(r11)
+fmuls f5, f5, f12
+lfs f6, 12(r11)
+lfs f0, 28(r12)
+fmuls f1, f0, f6
+stfs f1, 40(r12)
+fmuls f0, f0, f5
+lfs f1, 16(r12)
+fadds f0, f0, f1
+stfs f0, 52(r12)
+lfs f0, 32(r12)
+fmuls f1, f0, f6
+stfs f1, 44(r12)
+fmuls f0, f0, f5
+lfs f1, 20(r12)
+fadds f0, f0, f1
+stfs f0, 56(r12)
+lfs f0, 36(r12)
+fmuls f1, f0, f6
+stfs f1, 48(r12)
+fmuls f0, f0, f5
+lfs f1, 24(r12)
+fadds f0, f0, f1
+stfs f0, 60(r12)
+li r0, 1
+stw r0, 0(r12)
+tcPrepareDone:
+blr
+tcOrigin:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcOriginNative
+addi r3, r12, 16
+blr
+tcOriginNative:
+b 0x02429774
+0x021A6674 = bla tcOrigin
+0x021A6B84 = bla tcOrigin
+0x021A6C4C = bla tcOrigin
+tcNormalize:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcNormalizeNative
+lwz r0, 28(r12)
+stw r0, 0(r3)
+lwz r0, 32(r12)
+stw r0, 4(r3)
+lwz r0, 36(r12)
+stw r0, 8(r3)
+blr
+tcNormalizeNative:
+b 0x023EBB30
+0x021A66D4 = bla tcNormalize
+tcCollision:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcCollisionNative
+addi r4, r12, 16
+addi r5, r12, 40
+tcCollisionNative:
+b 0x02437E98
+0x021A67F4 = bla tcCollision
+tcUnproject:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcUnprojectNative
+lwz r0, 52(r12)
+stw r0, 0(r3)
+lwz r0, 56(r12)
+stw r0, 4(r3)
+lwz r0, 60(r12)
+stw r0, 8(r3)
+blr
+tcUnprojectNative:
+b 0x024665E4
+0x021A55A8 = bla tcUnproject
+tcNativeWidget:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcWidgetNative
+b 0x0245F21C
+tcWidgetNative:
+b 0x0245F26C
+0x021A5440 = bla tcNativeWidget
+tcMeshHit:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcMeshDone
+li r0, 1
+stw r0, 4(r12)
+li r0, 0
+stw r0, 8(r12)
+lwz r0, 100(r28)
+stw r0, 52(r12)
+lwz r0, 104(r28)
+stw r0, 56(r12)
+lwz r0, 108(r28)
+stw r0, 60(r12)
+lwz r11, 0(r28)
+cmpwi r11, 0
+beq tcMeshDone
+lwz r11, 0x120(r11)
+cmpwi r11, 0
+beq tcMeshDone
+lwz r11, 0x2C(r11)
+cmpwi r11, 0
+beq tcMeshDone
+lwz r0, 0(r11)
+lis r11, 0x102E
+ori r11, r11, 0x17D8
+cmpw r0, r11
+bne tcMeshDone
+li r0, 1
+stw r0, 8(r12)
+tcMeshDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+mr r26, r28
+blr
+0x021A68A4 = bla tcMeshHit
+tcGuideShow:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+mr r3, r31
+bl tcGuideFind
+cmpwi r3, 0
+bne tcGuideShowFound
+lis r3, tcGuides@ha
+addi r3, r3, tcGuides@l
+li r4, 8
+lis r11, mrCullEpoch@ha
+addi r11, r11, mrCullEpoch@l
+lwz r11, 0(r11)
+tcGuideFree:
+lwz r0, 4(r3)
+subf r0, r0, r11
+cmplwi r0, 2
+bgt tcGuideShowFound
+lwz r0, 0(r3)
+cmpwi r0, 0
+beq tcGuideShowFound
+addi r3, r3, 24
+addi r4, r4, -1
+cmpwi r4, 0
+bne tcGuideFree
+b tcGuideShowDone
+tcGuideShowFound:
+stw r31, 0(r3)
+li r0, 0
+stw r0, 4(r3)
+tcGuideShowDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+b 0x0245DF48
+0x021322D4 = bla tcGuideShow
+tcGuideFind:
+lis r12, tcGuides@ha
+addi r12, r12, tcGuides@l
+li r11, 8
+tcGuideFindLoop:
+lwz r0, 0(r12)
+cmpw r0, r3
+beq tcGuideFound
+addi r12, r12, 24
+addi r11, r11, -1
+cmpwi r11, 0
+bne tcGuideFindLoop
+li r3, 0
+blr
+tcGuideFound:
+mr r3, r12
+blr
+tcGuideAnchor:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lbz r0, 0x4C(r3)
+cmpwi r0, 0
+beq tcGuideAnchorDone
+lbz r0, 0x4D(r3)
+cmpwi r0, 0
+beq tcGuideAnchorDone
+bl tcGuideFind
+cmpwi r3, 0
+beq tcGuideAnchorDone
+lis r11, mrCullEpoch@ha
+addi r11, r11, mrCullEpoch@l
+lwz r0, 0(r11)
+stw r0, 4(r3)
+lwz r5, 32(r1)
+lwz r0, 0(r5)
+stw r0, 8(r3)
+lwz r0, 4(r5)
+stw r0, 12(r3)
+lwz r0, 8(r5)
+stw r0, 16(r3)
+tcGuideAnchorDone:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+b 0x022FBFF8
+0x02132348 = bla tcGuideAnchor
+tcGuideDraw:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+bl tcLease
+andi. r0, r3, 2
+beq tcGuideDrawNative
+lwz r3, 24(r1)
+bl tcGuideFind
+cmpwi r3, 0
+beq tcGuideDrawNative
+lwz r0, 4(r3)
+lis r11, mrCullEpoch@ha
+addi r11, r11, mrCullEpoch@l
+lwz r11, 0(r11)
+subf r0, r0, r11
+cmplwi r0, 1
+bgt tcGuideDrawNative
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+blr
+tcGuideDrawNative:
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+b 0x0245EA14
+0x102A59B4 = .int tcGuideDraw
+tcPublish:
+lis r12, tcPacket@ha
+addi r12, r12, tcPacket@l
+lis r11, rrSlot@ha
+addi r11, r11, rrSlot@l
+lwz r8, 0(r11)
+mulli r8, r8, 2
+add r8, r8, r10
+mulli r8, r8, 160
+addi r12, r12, 16
+add r12, r12, r8
+li r0, 0
+stw r0, 0(r12)
+lis r11, tcWorld@ha
+addi r11, r11, tcWorld@l
+lwz r0, 56(r11)
+li r8, 0
+cmpwi r0, 1
+bne tcPublishMode
+li r8, 1
+tcPublishMode:
+stw r8, 4(r12)
+lwz r0, 48(r11)
+stw r0, 8(r12)
+li r0, 0
+stw r0, 16(r12)
+stw r0, 32(r12)
+stw r0, 48(r12)
+stw r0, 64(r12)
+stw r0, 80(r12)
+stw r0, 96(r12)
+stw r0, 112(r12)
+stw r0, 128(r12)
+stw r0, 144(r12)
+lis r11, tcRay@ha
+addi r11, r11, tcRay@l
+lwz r0, 0(r11)
+cmpwi r0, 0
+beq tcPublishGuides
+lwz r0, 12(r11)
+lwz r8, 8(r12)
+cmpw r0, r8
+bne tcPublishGuides
+li r0, 1
+lis r8, tcHand@ha
+addi r8, r8, tcHand@l
+lwz r0, 4(r8)
+cmpwi r0, 1
+li r0, 1
+bne tcPublishCursorKind
+lwz r8, 8(r8)
+lwz r0, 8(r12)
+cmpw r8, r0
+li r0, 1
+bne tcPublishCursorKind
+li r0, 2
+tcPublishCursorKind:
+stw r0, 16(r12)
+lfs f0, 12(r9)
+lfs f1, 0(r9)
+lfs f2, 52(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 4(r9)
+lfs f2, 56(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 8(r9)
+lfs f2, 60(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 20(r12)
+lfs f0, 28(r9)
+lfs f1, 16(r9)
+lfs f2, 52(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 20(r9)
+lfs f2, 56(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 24(r9)
+lfs f2, 60(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 24(r12)
+lfs f0, 44(r9)
+lfs f1, 32(r9)
+lfs f2, 52(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 36(r9)
+lfs f2, 56(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+lfs f1, 40(r9)
+lfs f2, 60(r11)
+fmuls f1, f1, f2
+fadds f0, f0, f1
+stfs f0, 28(r12)
+tcPublishGuides:
+lis r11, tcWorld@ha
+addi r11, r11, tcWorld@l
+lwz r0, 68(r11)
+.int 0x7C2004AC ; lwsync
+stw r0, 0(r12)
+blr
+tcWorld:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+tcRay:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+tcGuides:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+tcConst:
+.float 1.0
+.float 0.1
+.float 1500.0
+.float 100000.0
+tcPacket:
+.int 0x4D544D4B
+.int 2
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+tcAimHistory:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+tcAimPose:
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+.int 0
+; Reset on native manager construction, not by remembered pointer equality.
+tcManagerReset:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+li r0, 0
+stw r0, 0(r12)
+stw r0, 4(r12)
+stw r0, 8(r12)
+stw r0, 12(r12)
+lis r12, tcWorld@ha
+addi r12, r12, tcWorld@l
+li r0, 0
+stw r0, 48(r12)
+lis r12, tcRay@ha
+stw r0, tcRay@l(r12)
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+stw r0, 0(r12)
+stw r0, 4(r12)
+stw r0, 8(r12)
+lis r12, tcGuides@ha
+addi r12, r12, tcGuides@l
+li r11, 8
+tcManagerClearGuides:
+stw r0, 0(r12)
+stw r0, 4(r12)
+addi r12, r12, 24
+addi r11, r11, -1
+cmpwi r11, 0
+bne tcManagerClearGuides
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+mflr r0
+b 0x021A5184
+0x021A5180 = ba tcManagerReset
+
+
+; Native TouchPoint preview. No touch byte or sensor message is synthesized.
+; Both manager return paths run this after its input/release handling.
+tcHandFinish:
+stwu r1, -0xE0(r1)
+stw r0, 8(r1)
+mflr r0
+stw r0, 12(r1)
+.int 0x7C000026 ; mfcr r0
+stw r0, 16(r1)
+.int 0x7C0902A6 ; mfctr r0
+stw r0, 20(r1)
+stw r3, 24(r1)
+stw r4, 28(r1)
+stw r5, 32(r1)
+stw r6, 36(r1)
+stw r7, 40(r1)
+stw r8, 44(r1)
+stw r9, 48(r1)
+stw r10, 52(r1)
+stw r11, 56(r1)
+stw r12, 60(r1)
+.int 0xD8010040 ; stfd f0
+.int 0xD8210048 ; stfd f1
+.int 0xD8410050 ; stfd f2
+.int 0xD8610058 ; stfd f3
+.int 0xD8810060 ; stfd f4
+.int 0xD8A10068 ; stfd f5
+.int 0xD8C10070 ; stfd f6
+.int 0xD8E10078 ; stfd f7
+.int 0xD9010080 ; stfd f8
+.int 0xD9210088 ; stfd f9
+.int 0xD9410090 ; stfd f10
+.int 0xD9610098 ; stfd f11
+.int 0xD98100A0 ; stfd f12
+.int 0xD9A100A8 ; stfd f13
+lwz r3, 8(r30)
+bl tcHandPreview
+.int 0xC8010040 ; lfd f0
+.int 0xC8210048 ; lfd f1
+.int 0xC8410050 ; lfd f2
+.int 0xC8610058 ; lfd f3
+.int 0xC8810060 ; lfd f4
+.int 0xC8A10068 ; lfd f5
+.int 0xC8C10070 ; lfd f6
+.int 0xC8E10078 ; lfd f7
+.int 0xC9010080 ; lfd f8
+.int 0xC9210088 ; lfd f9
+.int 0xC9410090 ; lfd f10
+.int 0xC9610098 ; lfd f11
+.int 0xC98100A0 ; lfd f12
+.int 0xC9A100A8 ; lfd f13
+lwz r3, 24(r1)
+lwz r4, 28(r1)
+lwz r5, 32(r1)
+lwz r6, 36(r1)
+lwz r7, 40(r1)
+lwz r8, 44(r1)
+lwz r9, 48(r1)
+lwz r10, 52(r1)
+lwz r11, 56(r1)
+lwz r12, 60(r1)
+lwz r0, 20(r1)
+.int 0x7C0903A6 ; mtctr r0
+lwz r0, 16(r1)
+.int 0x7C0FF120 ; mtcrf 255,r0
+lwz r0, 12(r1)
+mtlr r0
+lwz r0, 8(r1)
+addi r1, r1, 0xE0
+lwz r29, 0x34(r1)
+blr
+0x021A56E4 = bla tcHandFinish
+0x021A5734 = bla tcHandFinish
+
+tcHandPreview:
+stwu r1, -0x20(r1)
+mflr r0
+stw r0, 0x24(r1)
+stw r31, 0x1C(r1)
+mr r31, r3
+cmpwi r31, 0
+beq tcHandPreviewDone
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcHandPreviewOff
+lwz r0, 8(r12)
+cmpwi r0, 0
+beq tcHandPreviewOff
+; PointWait is presentation only. Native control remains gated by trigger.
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+lwz r0, 4(r12)
+cmpwi r0, 0
+bne tcHandPreviewPlace
+bl 0x023FC848
+cmpwi r3, 0
+beq tcHandPreviewState
+mr r3, r31
+bl 0x02414194
+tcHandPreviewState:
+mr r3, r31
+lis r4, 0x104E
+addi r4, r4, 0x392C
+bl 0x02441238
+cmpwi r3, 0
+bne tcHandPreviewAnimate
+mr r3, r31
+lis r4, 0x104E
+addi r4, r4, 0x392C
+bl 0x02441158
+tcHandPreviewAnimate:
+; Start the native pointing animation on entering hover, not every frame.
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+lwz r0, 12(r12)
+cmpwi r0, 0
+bne tcHandPreviewPlace
+mr r3, r31
+lis r4, 0x102F
+addi r4, r4, 0x104C
+bl 0x023F8F50
+tcHandPreviewPlace:
+mr r3, r31
+lis r4, tcRay@ha
+addi r4, r4, tcRay@l
+addi r4, r4, 52
+addi r5, r31, 0xA8
+bl 0x021A7574
+mr r3, r31
+bl 0x0240164C
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+li r0, 1
+stw r0, 4(r12)
+stw r0, 12(r12)
+lis r11, mrCullEpoch@ha
+lwz r0, mrCullEpoch@l(r11)
+stw r0, 8(r12)
+b tcHandPreviewDone
+tcHandPreviewOff:
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+lwz r0, 12(r12)
+li r11, 0
+stw r11, 12(r12)
+stw r11, 4(r12)
+cmpwi r0, 0
+beq tcHandPreviewDone
+; A preview we made alive must not keep dispatching native touch messages.
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+lwz r0, 4(r12)
+cmpwi r0, 0
+bne tcHandPreviewDone
+mr r3, r31
+bl 0x0241433C
+tcHandPreviewDone:
+lwz r0, 0x24(r1)
+lwz r31, 0x1C(r1)
+mtlr r0
+addi r1, r1, 0x20
+blr
+
+; A hover may animate the existing model but must never run its action dispatch.
+; Keep the game's controller/mouse path when VR is not taking touch ownership.
+tcHandControl:
+lis r12, tcRay@ha
+lwz r0, tcRay@l(r12)
+cmpwi r0, 0
+beq tcHandControlNative
+lis r12, tcButtons@ha
+addi r12, r12, tcButtons@l
+lwz r0, 4(r12)
+cmpwi r0, 0
+beq tcHandControlHover
+tcHandControlNative:
+stwu r1, -0x20(r1)
+mflr r0
+stw r0, 0x24(r1)
+stw r31, 0x1C(r1)
+mr r31, r3
+bl 0x021A69D4
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcHandControlDone
+lwz r0, 8(r12)
+cmpwi r0, 0
+bne tcHandControlDone
+mr r3, r31
+bl 0x02401720
+tcHandControlDone:
+lwz r0, 0x24(r1)
+lwz r31, 0x1C(r1)
+mtlr r0
+addi r1, r1, 0x20
+blr
+tcHandControlHover:
+blr
+0x102F1234 = .int tcHandControl
+
+; Do not begin the native release animation while still hovering a platform.
+tcHandRelease:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcHandReleaseNative
+lwz r0, 8(r12)
+cmpwi r0, 0
+bne tcHandReleaseDone
+tcHandReleaseNative:
+b 0x021A7890
+tcHandReleaseDone:
+blr
+0x021A5730 = bla tcHandRelease
+
+; The native hand and its animation use the exact controller collision point.
+; No screen-coordinate reprojection or separate target offset is applied.
+tcHandPosition:
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lwz r0, 0(r12)
+cmpwi r0, 0
+beq tcHandPositionNative
+lis r11, tcHand@ha
+lwz r0, tcHand@l(r11)
+cmpw r0, r3
+bne tcHandPositionNative
+addi r4, r12, 52
+tcHandPositionNative:
+b 0x02406778
+0x021A75AC = bla tcHandPosition
+
+
+; The pointing finger is offset from the native actor origin. Align its live
+; animated distal joint using a model-only render matrix. Neither the actor
+; pose nor its collision/sensor matrices are changed by the visual alignment.
+tcHandCalc:
+stwu r1, -0xA0(r1)
+mflr r0
+stw r0, 0xA4(r1)
+stw r31, 0x9C(r1)
+stw r30, 0x98(r1)
+mr r31, r3
+bl 0x024146A0
+lis r12, tcHand@ha
+addi r12, r12, tcHand@l
+lwz r0, 0(r12)
+cmpw r0, r31
+bne tcHandCalcDone
+lwz r0, 4(r12)
+cmpwi r0, 1
+bne tcHandCalcDone
+lis r11, mrCullEpoch@ha
+lwz r11, mrCullEpoch@l(r11)
+lwz r0, 8(r12)
+cmpw r0, r11
+bne tcHandCalcDone
+lwz r0, 0x44(r31)
+cmpwi r0, 0
+beq tcHandCalcDone
+; Native lookup validates the joint before the matrix accessor is called.
+mr r3, r31
+lis r4, tcFingerJoint@ha
+addi r4, r4, tcFingerJoint@l
+bl 0x02402550
+cmpwi r3, 0
+beq tcHandCalcDone
+mr r3, r31
+lis r4, tcFingerJoint@ha
+addi r4, r4, tcFingerJoint@l
+bl 0x0240257C
+cmpwi r3, 0
+beq tcHandCalcDone
+lis r12, tcRay@ha
+addi r12, r12, tcRay@l
+lfs f0, 52(r12)
+lfs f1, 12(r3)
+fsubs f0, f0, f1
+stfs f0, 8(r1)
+lfs f0, 56(r12)
+lfs f1, 28(r3)
+fsubs f0, f0, f1
+stfs f0, 12(r1)
+lfs f0, 60(r12)
+lfs f1, 44(r3)
+fsubs f0, f0, f1
+stfs f0, 16(r1)
+addi r3, r1, 0x30
+mr r4, r31
+bl 0x02407214
+; Adjust a call-local render matrix, never the actor or collision transform.
+lfs f0, 0x3C(r1)
+lfs f1, 8(r1)
+fadds f0, f0, f1
+stfs f0, 0x3C(r1)
+lfs f0, 0x4C(r1)
+lfs f1, 12(r1)
+fadds f0, f0, f1
+stfs f0, 0x4C(r1)
+lfs f0, 0x5C(r1)
+lfs f1, 16(r1)
+fadds f0, f0, f1
+stfs f0, 0x5C(r1)
+mr r3, r31
+bl 0x024068E8
+mr r5, r3
+mr r3, r31
+addi r4, r1, 0x30
+bl 0x023FBC24
+tcHandCalcDone:
+lwz r0, 0xA4(r1)
+lwz r30, 0x98(r1)
+lwz r31, 0x9C(r1)
+mtlr r0
+addi r1, r1, 0xA0
+blr
+0x102F11AC = .int tcHandCalc
+tcFingerJoint:
+.int 0x496E6465 ; Index3, a model joint name, not embedded game geometry
+.int 0x78330000
+
+tcHand:
+.int 0 ; current manager's native TouchPoint
+.int 0 ; visible native replacement
+.int 0 ; calculation epoch of replacement
+.int 0 ; preview owned by VR
+
+[Mario3DWorld_Touch_Passthrough]
+moduleMatches = 0xBBAF1908
+.origin = codecave
+tcInputUpdate:
+blr
+tcCameraCapture:
 blr

@@ -26,7 +26,7 @@ Redistributable may be needed on the machine running the mod.
 The files under `graphicPacks/` are assembled by Cemu when it starts the game.
 No game executable is required to compile the C++ layer.
 
-## Package Alpha 1.5
+## Package Alpha 1.6
 
 ```powershell
 python tools/package.py --dll build/Release/cemuvr_layer.dll
@@ -40,7 +40,7 @@ The installation ZIP includes the DLL. The source ZIP includes the C++ source,
 ASM packs, launchers and notices. Build outputs and local Cemu settings are
 excluded from Git.
 
-## Pose-token regression tests
+## Regression tests
 
 Configure with `-DCEMUVR_BUILD_TESTS=ON`, build Release, then run:
 
@@ -50,7 +50,12 @@ ctest --test-dir build -C Release --output-on-failure
 
 These offline tests exercise the production history and transport-slot code,
 including token wrap, stale markers, the mailbox seqlock rollover and 24 simulated
-hours each at 60, 90, 120 and 144 Hz. They do not launch Cemu or a headset runtime.
+hours each at 60, 90, 120 and 144 Hz. Further tests cover the touch packet, the
+blow gesture and the microphone blow detector, which runs on synthetic audio
+only. They do not launch Cemu or a headset runtime and do not use a microphone.
+
+`python tools/test_blow_gesture.py` and `python tools/test_mario_touch.py`
+execute the guest code of the graphic pack against synthetic memory.
 
 Normal sessions wrap pose tokens automatically. Each wrap emits one
 `reference.token wrap=1` record, even with periodic diagnostics disabled.

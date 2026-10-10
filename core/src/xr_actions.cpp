@@ -72,6 +72,7 @@ bool XrCore::createActions() {
     struct Declare { XrAction* action; XrActionType type; const char* name; const char* label; };
     const Declare declare[] = {
         {&m_actPose,       XR_ACTION_TYPE_POSE_INPUT,     "hand_pose",   "Hand"},
+        {&m_actAimPose, XR_ACTION_TYPE_POSE_INPUT, "aim_pose", "Touch aim"},
         {&m_actTrigger,    XR_ACTION_TYPE_FLOAT_INPUT,    "trigger",     "Trigger"},
         {&m_actSqueeze,    XR_ACTION_TYPE_FLOAT_INPUT,    "squeeze",     "Grip"},
         {&m_actStick,      XR_ACTION_TYPE_VECTOR2F_INPUT, "stick",       "Stick"},
@@ -104,12 +105,14 @@ bool XrCore::createActions() {
         {"/interaction_profiles/khr/simple_controller", {
             {&m_actHaptic,    "/output/haptic",     -1},
             {&m_actPose,      "/input/grip/pose",   -1},
+            {&m_actAimPose, "/input/aim/pose", -1},
             {&m_actPrimary,   "/input/select/click", -1},
             {&m_actMenu,      "/input/menu/click",   -1},
         }},
         {"/interaction_profiles/oculus/touch_controller", {
             {&m_actHaptic,     "/output/haptic",          -1},
             {&m_actPose,       "/input/grip/pose",        -1},
+            {&m_actAimPose, "/input/aim/pose", -1},
             {&m_actTrigger,    "/input/trigger/value",    -1},
             {&m_actSqueeze,    "/input/squeeze/value",    -1},
             {&m_actStick,      "/input/thumbstick",       -1},
@@ -123,6 +126,7 @@ bool XrCore::createActions() {
         {"/interaction_profiles/valve/index_controller", {
             {&m_actHaptic,     "/output/haptic",          -1},
             {&m_actPose,       "/input/grip/pose",        -1},
+            {&m_actAimPose, "/input/aim/pose", -1},
             {&m_actTrigger,    "/input/trigger/value",    -1},
             {&m_actSqueeze,    "/input/squeeze/value",    -1},
             {&m_actStick,      "/input/thumbstick",       -1},
@@ -133,6 +137,7 @@ bool XrCore::createActions() {
         {"/interaction_profiles/htc/vive_controller", {
             {&m_actHaptic,     "/output/haptic",         -1},
             {&m_actPose,       "/input/grip/pose",       -1},
+            {&m_actAimPose, "/input/aim/pose", -1},
             {&m_actTrigger,    "/input/trigger/value",   -1},
             {&m_actSqueeze,    "/input/squeeze/click",   -1},
             {&m_actStick,      "/input/trackpad",        -1},
@@ -142,6 +147,7 @@ bool XrCore::createActions() {
         {"/interaction_profiles/microsoft/motion_controller", {
             {&m_actHaptic,     "/output/haptic",          -1},
             {&m_actPose,       "/input/grip/pose",        -1},
+            {&m_actAimPose, "/input/aim/pose", -1},
             {&m_actTrigger,    "/input/trigger/value",    -1},
             {&m_actSqueeze,    "/input/squeeze/click",    -1},
             {&m_actStick,      "/input/thumbstick",       -1},
@@ -196,6 +202,13 @@ bool XrCore::createActions() {
         }
     }
 
+    for (int hand=0;hand<2;++hand) {
+        XrActionSpaceCreateInfo si{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        si.action=m_actAimPose;si.subactionPath=m_handPath[hand];
+        si.poseInActionSpace.orientation.w=1.f;
+        if(XR_FAILED(xrCreateActionSpace(m_session,&si,&m_aimSpace[hand])))return false;
+    }
+
     XrSessionActionSetsAttachInfo ai{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     ai.countActionSets = 1;
     ai.actionSets = &m_actionSet;
@@ -207,6 +220,7 @@ bool XrCore::createActions() {
 
     m_actionsReady = true;
     CVR_INFO("xr.action", "ready=1 profiles=%u hands=2 space=stage", accepted);
+    m_micBlow.start();
     return true;
 }
 
@@ -215,7 +229,11 @@ bool XrCore::createActions() {
 // ---------------------------------------------------------------------------
 
 void XrCore::syncActions() {
-    if (!m_actionsReady || m_session == XR_NULL_HANDLE) return;
+    if (!m_actionsReady || m_session == XR_NULL_HANDLE) {
+        m_headBlow.reset();
+        m_hands[1].buttons &= ~kPadBlow;
+        return;
+    }
 
     XrActiveActionSet active{m_actionSet, XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};
@@ -223,6 +241,7 @@ void XrCore::syncActions() {
     si.activeActionSets = &active;
     const XrResult r = xrSyncActions(m_session, &si);
     if (XR_FAILED(r)) {
+        m_headBlow.reset();
         // XR_SESSION_NOT_FOCUSED ist keine Stoerung, sondern der Normalfall,
         // solange ein Systemmenue vorn ist. Dann bleibt der letzte Zustand
         // stehen, und der Gast sieht keine zufaellig gedrueckte Taste.
@@ -233,6 +252,7 @@ void XrCore::syncActions() {
         return;
     }
 
+    bool rightTracked = false;
     for (int hand = 0; hand < 2; ++hand) {
         ControllerInput state{};
         XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};
@@ -284,10 +304,51 @@ void XrCore::syncActions() {
             if (XR_SUCCEEDED(lr) && (location.locationFlags & need) == need) {
                 state.pose = location.pose;
                 state.valid = 1;
+                if (hand == 1) {
+                    constexpr auto tracked = XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT |
+                                             XR_SPACE_LOCATION_POSITION_TRACKED_BIT;
+                    rightTracked = (location.locationFlags & tracked) == tracked;
+                }
             }
         }
 
+        // Touch uses the runtime's pointing axis. Grip remains the input for
+        // head gestures and every existing controller interaction.
+        gi.action=m_actAimPose;
+        XrActionStatePose aim{XR_TYPE_ACTION_STATE_POSE};
+        if(XR_SUCCEEDED(xrGetActionStatePose(m_session,&gi,&aim)) && aim.isActive) {
+            XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+            constexpr auto need=XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|XR_SPACE_LOCATION_POSITION_VALID_BIT;
+            if(XR_SUCCEEDED(xrLocateSpace(m_aimSpace[hand],m_stageSpace,
+                m_frameState.predictedDisplayTime,&location)) && (location.locationFlags&need)==need) {
+                state.aimPose=location.pose;state.aimValid=1;
+            }
+        }
         m_hands[hand] = state;
+    }
+    // Both poses were located at this frame's predicted display time.
+    const auto& a = m_views[0].pose.position;
+    const auto& b = m_views[1].pose.position;
+    const auto& hand = m_hands[1].pose.position;
+    const float dx = hand.x - (a.x + b.x) * 0.5f;
+    const float dy = hand.y - (a.y + b.y) * 0.5f;
+    const float dz = hand.z - (a.z + b.z) * 0.5f;
+    const bool wasBlowing = m_headBlow.active();
+    const bool blowing = m_headBlow.update(r == XR_SUCCESS && m_viewsValid &&
+        m_viewsTracked && rightTracked, dx*dx + dy*dy + dz*dz,
+        m_frameState.predictedDisplayTime);
+    // Blowing heard on the microphone counts like the gesture, with or without
+    // controllers; only the gesture confirms itself with a vibration.
+    if (blowing || m_micBlow.blowing()) m_hands[1].buttons |= kPadBlow;
+    if (blowing && !wasBlowing && m_actHaptic != XR_NULL_HANDLE) {
+        XrHapticVibration shake{XR_TYPE_HAPTIC_VIBRATION};
+        shake.duration = 40 * 1000 * 1000;
+        shake.frequency = XR_FREQUENCY_UNSPECIFIED;
+        shake.amplitude = 0.5f;
+        XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+        info.action = m_actHaptic;
+        info.subactionPath = m_handPath[1];
+        xrApplyHapticFeedback(m_session, &info, (const XrHapticBaseHeader*)&shake);
     }
     ++m_handGeneration;
     pulseAtHead();
@@ -326,6 +387,8 @@ void XrCore::pulseAtHead() {
 }
 
 void XrCore::destroyActions() {
+    for (auto& space : m_aimSpace)
+        if(space!=XR_NULL_HANDLE){xrDestroySpace(space);space=XR_NULL_HANDLE;}
     for (auto& space : m_handSpace)
         if (space != XR_NULL_HANDLE) { xrDestroySpace(space); space = XR_NULL_HANDLE; }
     if (m_actionSet != XR_NULL_HANDLE) {
@@ -333,10 +396,12 @@ void XrCore::destroyActions() {
         xrDestroyActionSet(m_actionSet);
         m_actionSet = XR_NULL_HANDLE;
     }
-    m_actPose = m_actTrigger = m_actSqueeze = m_actStick = XR_NULL_HANDLE;
+    m_actAimPose = m_actPose = m_actTrigger = m_actSqueeze = m_actStick = XR_NULL_HANDLE;
     m_actPrimary = m_actSecondary = m_actStickClick = m_actMenu = XR_NULL_HANDLE;
     m_actHaptic = XR_NULL_HANDLE;
     m_handAtHead = false;
+    m_headBlow.reset();
+    m_micBlow.stop();
     m_hands = {};
     m_actionsReady = false;
 }
